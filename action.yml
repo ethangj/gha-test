@@ -1,0 +1,179 @@
+name: 'WireMock Runner'
+description: >
+  Push/pull mock API specs, run mock servers, and record API traffic
+  using WireMock Cloud and WireMock Runner.
+author: 'WireMock'
+
+branding:
+  icon: 'zap'
+  color: 'orange'
+
+inputs:
+
+  # ── Shared ─────────────────────────────────
+  api-token:
+    description: >
+      WireMock Cloud API token. Required for push/pull/environments-create
+      and for post-run-pull in ephemeral mode.
+    required: false
+
+  wiremock-dir:
+    description: >
+      Path to the directory containing wiremock.yaml (and profile files),
+      relative to the workspace root. Default: .wiremock
+    required: false
+    default: '.wiremock'
+
+  # ── Pattern 1: Ephemeral container mode ────
+  run:
+    description: >
+      Shell command to execute while the Runner container is live.
+      When set, the Action starts a wiremock/wiremock-runner container,
+      waits for it to be healthy, executes this command, then stops the
+      container.
+    required: false
+
+  mode:
+    description: >
+      Runner mode for the ephemeral container. One of: serve, record-many.
+      Default: serve.
+    required: false
+    default: 'serve'
+
+  ports:
+    description: >
+      Comma-separated list of mock API ports to expose from the container.
+      Must match port values in wiremock.yaml. Example: '8080,8081'
+    required: false
+    default: '8080'
+
+  runner-admin-port:
+    description: >
+      Port for the Runner admin HTTP interface. Default: 9999.
+    required: false
+    default: '9999'
+
+  runner-version:
+    description: >
+      Docker image tag for wiremock/wiremock-runner. Default: latest.
+    required: false
+    default: 'latest'
+
+  profile:
+    description: >
+      Environment profile name. Activates wiremock-<profile>.yaml overlay.
+      Example: staging, development
+    required: false
+
+  post-run-pull:
+    description: >
+      When 'true' and mode is record-many, automatically pull recorded
+      stubs from WireMock Cloud after recording stops. Requires api-token.
+    required: false
+    default: 'false'
+
+  # ── Pattern 2: CLI command mode ────────────
+  command:
+    description: >
+      CLI operation to perform. One of:
+        push                  — push local stubs to WireMock Cloud
+        pull                  — pull stubs from WireMock Cloud
+        environments-create   — create a new environment/profile in Cloud
+        record-flush          — flush buffered recordings to Cloud
+        record-stop           — switch Runner from record-many to serve
+        record-flush-and-stop — flush then switch to serve (recommended)
+        mode-switch           — switch Runner to any mode
+        resolve-urls          — parse wiremock.yaml, verify Runner health,
+                                and emit service URLs as step outputs
+    required: false
+
+  mock-api:
+    description: >
+      Name of the mock API as defined in wiremock.yaml. Used with
+      push, pull, and environments-create. Optional when all: 'true'.
+    required: false
+
+  all:
+    description: >
+      When 'true', passes --all to push/pull (processes all APIs).
+    required: false
+    default: 'false'
+
+  runner-admin-url:
+    description: >
+      Base URL of a running Runner's admin API. Used by record-flush,
+      record-stop, record-flush-and-stop, mode-switch, and resolve-urls.
+      Default: http://localhost:9999
+    required: false
+    default: 'http://localhost:9999'
+
+  include-services:
+    description: >
+      Comma-separated list of service keys to record. When omitted, all
+      services are recorded. Example: invoicing-api,payment-api
+    required: false
+
+  target-mode:
+    description: >
+      Target mode for the mode-switch command. One of: serve, record-many.
+    required: false
+
+  runner-config:
+    description: >
+      YAML string of additional config fields passed to the Runner's
+      mode-switch endpoint as the `config` object. Example:
+        runner-config: |
+          max-batch-requests: 50
+    required: false
+
+  force:
+    description: >
+      When 'true' and command is environments-create, fail hard if the
+      profile already exists instead of skipping silently.
+    required: false
+    default: 'false'
+
+  wiremock-cli-version:
+    description: >
+      npm version tag for @wiremock/cli. Default: latest.
+    required: false
+    default: 'latest'
+
+  health-check-retries:
+    description: >
+      Number of times to poll /__/health before failing. Default: 30.
+    required: false
+    default: '30'
+
+  health-check-interval:
+    description: >
+      Seconds between health check polls. Default: 2.
+    required: false
+    default: '2'
+
+# NOTE: JavaScript action — outputs are set at runtime via core.setOutput().
+# The value: field is only valid for composite actions and is omitted here.
+outputs:
+
+  mock-api-url:
+    description: >
+      Base URL of the primary mock API (first service in wiremock.yaml).
+
+  mock-api-urls:
+    description: >
+      JSON object mapping service name to base URL.
+      Example: {"invoicing-api":"http://localhost:8080"}
+
+  runner-admin-url:
+    description: >
+      Runner admin URL (confirmed live after health check).
+
+  recording-flushed:
+    description: >
+      'true' if recordings were successfully flushed to WireMock Cloud.
+
+runs:
+  using: 'node24'
+  main: 'dist/index.js'
+  post: 'dist/index.js'
+  post-if: always()
