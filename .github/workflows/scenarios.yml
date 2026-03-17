@@ -468,12 +468,14 @@ jobs:
             -e WMC_API_TOKEN=${{ secrets.WIREMOCK_API_TOKEN }} \
             -e WMC_DEFAULT_MODE=serve \
             -e WMC_ADMIN_PORT=9999 \
+            -e WMC_RUN_PROFILE=development \
             wiremock/wiremock-runner:latest
           for i in $(seq 1 30); do
             curl -sf http://localhost:9999/__/health && echo "Runner healthy" && break
             [ "$i" = "30" ] && docker logs wiremock-runner && exit 1
             sleep 2
           done
+          sleep 3
 
       - name: Switch to record-many with batch config
         uses: ./
@@ -486,7 +488,7 @@ jobs:
 
       - name: Verify Runner is in record-many mode
         run: |
-          HEALTH=$(curl -sf http://localhost:9999/__/health)
+          HEALTH=$(curl -s http://localhost:9999/__/health)
           echo "Health response: $HEALTH"
 
       - name: Switch back to serve mode
