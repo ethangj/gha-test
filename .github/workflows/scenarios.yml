@@ -12,7 +12,7 @@ on:
 permissions: {}
 
 # ─────────────────────────────────────────────────────────────────────────────
-# UC-4: Ephemeral serve — start Runner with pre-committed stubs, run tests
+# UC-4: Ephemeral serve — push pre-committed stubs to Cloud, then serve them
 # ─────────────────────────────────────────────────────────────────────────────
 jobs:
   uc4-ephemeral-serve:
@@ -24,12 +24,28 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4
 
+      - name: Create development environment
+        uses: ./
+        with:
+          api-token: ${{ secrets.WIREMOCK_API_TOKEN }}
+          command: environments-create
+          profile: development
+
+      - name: Push pre-committed stubs to development
+        uses: ./
+        with:
+          api-token: ${{ secrets.WIREMOCK_API_TOKEN }}
+          command: push
+          all: 'true'
+          profile: development
+
       - name: Run tests against mock API
         id: mocks
         uses: ./
         with:
           api-token: ${{ secrets.WIREMOCK_API_TOKEN }}
           mode: serve
+          profile: development
           ports: '8080'
           run: |
             set -euo pipefail
