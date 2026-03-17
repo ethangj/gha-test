@@ -1,9 +1,8 @@
 name: Scenarios
 
 # Exercises every scenario the action supports.
-# Jobs without the `environment: integration` block run on every push (no secrets needed).
-# Jobs inside `environment: integration` require WIREMOCK_API_TOKEN and run against
-# the real WireMock Cloud project.
+# All jobs that start a WireMock Runner or call Cloud APIs require
+# WIREMOCK_API_TOKEN and run under environment: integration.
 
 on:
   push:
@@ -14,7 +13,6 @@ permissions: {}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # UC-4: Ephemeral serve — start Runner with pre-committed stubs, run tests
-# Requires: WIREMOCK_API_TOKEN (Runner always requires token to start)
 # ─────────────────────────────────────────────────────────────────────────────
 jobs:
   uc4-ephemeral-serve:
@@ -64,8 +62,8 @@ jobs:
           [ -n "${{ steps.mocks.outputs.mock-api-urls }}" ] || { echo "ERROR: mock-api-urls output missing"; exit 1; }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# UC-7 + UC-10: Resolve URLs (sidecar pattern) and cross-job URL sharing
-# Requires: WIREMOCK_API_TOKEN (Runner always requires token to start)
+# UC-7: Resolve URLs (sidecar pattern)
+# Runner started manually after checkout so wiremock.yaml is available.
 # ─────────────────────────────────────────────────────────────────────────────
   uc7-resolve-urls:
     name: 'UC-7: Resolve URLs (sidecar)'
@@ -76,23 +74,23 @@ jobs:
     outputs:
       mock-api-urls: ${{ steps.resolve.outputs.mock-api-urls }}
       mock-api-url: ${{ steps.resolve.outputs.mock-api-url }}
-    services:
-      wiremock-runner:
-        image: wiremock/wiremock-runner:latest
-        env:
-          WMC_DEFAULT_MODE: serve
-          WMC_ADMIN_PORT: 9999
-          WMC_API_TOKEN: ${{ secrets.WIREMOCK_API_TOKEN }}
-          WMC_RUN_PROFILE: development
-        ports:
-          - 8080:8080
-          - 9999:9999
-        options: >-
-          --health-cmd "curl -sf http://localhost:9999/__/health"
-          --health-interval 3s
-          --health-retries 20
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4
+
+      - name: Start WireMock Runner
+        run: |
+          docker run -d --name wiremock-runner \
+            -p 8080:8080 -p 9999:9999 \
+            -v "${{ github.workspace }}/.wiremock:/work/.wiremock" \
+            -e WMC_API_TOKEN=${{ secrets.WIREMOCK_API_TOKEN }} \
+            -e WMC_DEFAULT_MODE=serve \
+            -e WMC_ADMIN_PORT=9999 \
+            wiremock/wiremock-runner:latest
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:9999/__/health && echo "Runner healthy" && break
+            [ "$i" = "30" ] && docker logs wiremock-runner && exit 1
+            sleep 2
+          done
 
       - name: Resolve mock service URLs
         id: resolve
@@ -105,14 +103,17 @@ jobs:
         run: |
           echo "mock-api-url=${{ steps.resolve.outputs.mock-api-url }}"
           echo "mock-api-urls=${{ steps.resolve.outputs.mock-api-urls }}"
-          echo "runner-admin-url=${{ steps.resolve.outputs.runner-admin-url }}"
           [ "${{ steps.resolve.outputs.mock-api-url }}" = "http://localhost:8080" ] || {
             echo "ERROR: unexpected mock-api-url: ${{ steps.resolve.outputs.mock-api-url }}"
             exit 1
           }
 
+      - name: Stop Runner
+        if: always()
+        run: docker stop wiremock-runner || true
+
 # ─────────────────────────────────────────────────────────────────────────────
-# UC-10: Cross-job URL sharing — downstream job consumes resolve-urls output
+# UC-10: Cross-job URL sharing — downstream job consumes UC-7 outputs
 # ─────────────────────────────────────────────────────────────────────────────
   uc10-cross-job-urls:
     name: 'UC-10: Cross-job URL sharing'
@@ -127,7 +128,6 @@ jobs:
           PRIMARY='${{ needs.uc7-resolve-urls.outputs.mock-api-url }}'
           echo "Received mock-api-urls: $URLS"
           echo "Received mock-api-url:  $PRIMARY"
-          # Verify the JSON is parseable and contains our service
           echo "$URLS" | python3 -c "
           import json, sys
           data = json.load(sys.stdin)
@@ -138,7 +138,6 @@ jobs:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # UC-3: environments-create — bootstrap development + staging profiles in Cloud
-# Requires: WIREMOCK_API_TOKEN
 # ─────────────────────────────────────────────────────────────────────────────
   uc3-environments-create:
     name: 'UC-3: environments-create'
@@ -180,8 +179,7 @@ jobs:
           profile: development
 
 # ─────────────────────────────────────────────────────────────────────────────
-# UC-1: push — push local stubs to WireMock Cloud (development environment)
-# Requires: WIREMOCK_API_TOKEN
+# UC-1: push — push local stubs to WireMock Cloud
 # ─────────────────────────────────────────────────────────────────────────────
   uc1-push:
     name: 'UC-1: push to Cloud'
@@ -192,6 +190,20 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4
+
+      - name: Create environments (required before push with profile)
+        uses: ./
+        with:
+          api-token: ${{ secrets.WIREMOCK_API_TOKEN }}
+          command: environments-create
+          profile: development
+
+      - name: Create staging environment
+        uses: ./
+        with:
+          api-token: ${{ secrets.WIREMOCK_API_TOKEN }}
+          command: environments-create
+          profile: staging
 
       - name: Push all mock APIs to development
         uses: ./
@@ -211,7 +223,6 @@ jobs:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # UC-2: pull — pull stubs from Cloud back into workspace
-# Requires: WIREMOCK_API_TOKEN
 # ─────────────────────────────────────────────────────────────────────────────
   uc2-pull:
     name: 'UC-2: pull from Cloud'
@@ -222,6 +233,13 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4
+
+      - name: Create development environment (so profile yaml exists)
+        uses: ./
+        with:
+          api-token: ${{ secrets.WIREMOCK_API_TOKEN }}
+          command: environments-create
+          profile: development
 
       - name: Pull stubs from development
         uses: ./
@@ -235,14 +253,12 @@ jobs:
         run: |
           echo "Contents of .wiremock after pull:"
           find .wiremock -type f | sort
-          # The pull should have brought down stub files
-          STUB_COUNT=$(find .wiremock -name "*.json" | wc -l)
+          STUB_COUNT=$(find .wiremock -name "*.json" -o -name "*.yaml" | grep -v wiremock\.yaml | grep -v wiremock-development\.yaml | wc -l)
           echo "Stub files found: $STUB_COUNT"
           [ "$STUB_COUNT" -gt 0 ] || { echo "ERROR: no stub files found after pull"; exit 1; }
 
 # ─────────────────────────────────────────────────────────────────────────────
 # UC-5: Ephemeral record-many — record real API traffic, flush, pull stubs
-# Requires: WIREMOCK_API_TOKEN (for post-run-pull)
 # ─────────────────────────────────────────────────────────────────────────────
   uc5-ephemeral-record:
     name: 'UC-5: Ephemeral record-many'
@@ -253,6 +269,13 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4
+
+      - name: Create development environment (profile yaml required for record-many)
+        uses: ./
+        with:
+          api-token: ${{ secrets.WIREMOCK_API_TOKEN }}
+          command: environments-create
+          profile: development
 
       - name: Record API traffic and pull stubs
         id: recording
@@ -277,13 +300,13 @@ jobs:
         run: |
           echo "Contents of .wiremock after record+pull:"
           find .wiremock -type f | sort
-          STUB_COUNT=$(find .wiremock -name "*.json" | wc -l)
+          STUB_COUNT=$(find .wiremock -name "*.json" -o -name "*.yaml" | grep -v "wiremock.*\.yaml" | wc -l)
           echo "Stub files: $STUB_COUNT"
           [ "$STUB_COUNT" -gt 0 ] || { echo "ERROR: no stubs pulled after recording"; exit 1; }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# UC-6: Sidecar record-many — mode-switch, include-services, record-flush-and-stop
-# Requires: WIREMOCK_API_TOKEN
+# UC-6: Sidecar record-many — mode-switch, record, flush, pull
+# Runner started manually after checkout so wiremock.yaml is available.
 # ─────────────────────────────────────────────────────────────────────────────
   uc6-sidecar-record:
     name: 'UC-6: Sidecar record-many (mode-switch + flush)'
@@ -292,23 +315,31 @@ jobs:
     environment: integration
     permissions:
       contents: read
-    services:
-      wiremock-runner:
-        image: wiremock/wiremock-runner:latest
-        env:
-          WMC_DEFAULT_MODE: serve
-          WMC_ADMIN_PORT: 9999
-          WMC_API_TOKEN: ${{ secrets.WIREMOCK_API_TOKEN }}
-          WMC_RUN_PROFILE: development
-        ports:
-          - 8080:8080
-          - 9999:9999
-        options: >-
-          --health-cmd "curl -sf http://localhost:9999/__/health"
-          --health-interval 3s
-          --health-retries 20
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4
+
+      - name: Create development environment (profile yaml required for recording)
+        uses: ./
+        with:
+          api-token: ${{ secrets.WIREMOCK_API_TOKEN }}
+          command: environments-create
+          profile: development
+
+      - name: Start WireMock Runner (serve mode)
+        run: |
+          docker run -d --name wiremock-runner \
+            -p 8080:8080 -p 9999:9999 \
+            -v "${{ github.workspace }}/.wiremock:/work/.wiremock" \
+            -e WMC_API_TOKEN=${{ secrets.WIREMOCK_API_TOKEN }} \
+            -e WMC_DEFAULT_MODE=serve \
+            -e WMC_ADMIN_PORT=9999 \
+            -e WMC_RUN_PROFILE=development \
+            wiremock/wiremock-runner:latest
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:9999/__/health && echo "Runner healthy" && break
+            [ "$i" = "30" ] && docker logs wiremock-runner && exit 1
+            sleep 2
+          done
 
       - name: Resolve mock URLs (verifies Runner is healthy)
         id: mocks
@@ -353,9 +384,12 @@ jobs:
           all: 'true'
           profile: development
 
+      - name: Stop Runner
+        if: always()
+        run: docker stop wiremock-runner || true
+
 # ─────────────────────────────────────────────────────────────────────────────
 # UC-8: Promote — pull from development, push to staging (GitOps flow)
-# Requires: WIREMOCK_API_TOKEN
 # ─────────────────────────────────────────────────────────────────────────────
   uc8-promote:
     name: 'UC-8: Promote development → staging'
@@ -366,6 +400,20 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4
+
+      - name: Create environments (profile yamls required for push/pull)
+        uses: ./
+        with:
+          api-token: ${{ secrets.WIREMOCK_API_TOKEN }}
+          command: environments-create
+          profile: development
+
+      - name: Create staging environment
+        uses: ./
+        with:
+          api-token: ${{ secrets.WIREMOCK_API_TOKEN }}
+          command: environments-create
+          profile: staging
 
       - name: Pull stubs from development
         uses: ./
@@ -385,7 +433,7 @@ jobs:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # UC-9: mode-switch with runner-config (batched recording config)
-# Requires: WIREMOCK_API_TOKEN (Runner always requires token to start)
+# Runner started manually after checkout so wiremock.yaml is available.
 # ─────────────────────────────────────────────────────────────────────────────
   uc9-mode-switch-config:
     name: 'UC-9: mode-switch with runner-config'
@@ -393,23 +441,23 @@ jobs:
     environment: integration
     permissions:
       contents: read
-    services:
-      wiremock-runner:
-        image: wiremock/wiremock-runner:latest
-        env:
-          WMC_DEFAULT_MODE: serve
-          WMC_ADMIN_PORT: 9999
-          WMC_API_TOKEN: ${{ secrets.WIREMOCK_API_TOKEN }}
-          WMC_RUN_PROFILE: development
-        ports:
-          - 8080:8080
-          - 9999:9999
-        options: >-
-          --health-cmd "curl -sf http://localhost:9999/__/health"
-          --health-interval 3s
-          --health-retries 20
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4
+
+      - name: Start WireMock Runner
+        run: |
+          docker run -d --name wiremock-runner \
+            -p 8080:8080 -p 9999:9999 \
+            -v "${{ github.workspace }}/.wiremock:/work/.wiremock" \
+            -e WMC_API_TOKEN=${{ secrets.WIREMOCK_API_TOKEN }} \
+            -e WMC_DEFAULT_MODE=serve \
+            -e WMC_ADMIN_PORT=9999 \
+            wiremock/wiremock-runner:latest
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:9999/__/health && echo "Runner healthy" && break
+            [ "$i" = "30" ] && docker logs wiremock-runner && exit 1
+            sleep 2
+          done
 
       - name: Switch to record-many with batch config
         uses: ./
@@ -431,3 +479,7 @@ jobs:
           command: mode-switch
           target-mode: serve
           runner-admin-url: http://localhost:9999
+
+      - name: Stop Runner
+        if: always()
+        run: docker stop wiremock-runner || true
