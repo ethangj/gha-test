@@ -1,0 +1,498 @@
+# WireMock Runner GitHub Action
+
+[![CI](https://img.shields.io/github/actions/workflow/status/wiremock/wiremock-runner-action/ci.yml?branch=main&label=CI)](https://github.com/wiremock/wiremock-runner-action/actions)
+[![GitHub Marketplace](https://img.shields.io/badge/Marketplace-WireMock%20Runner-blue?logo=github)](https://github.com/marketplace/actions/wiremock-runner)
+
+Push and pull mock APIs, run ephemeral mock servers, record real API traffic, and promote stubs across environments — all from your GitHub Actions workflow.
+
+Built on [WireMock Cloud](https://app.wiremock.cloud) and the [WireMock Runner](https://docs.wiremock.io/runner/overview).
+
+---
+
+## Table of contents
+
+- [Prerequisites](#prerequisites)
+- [Quick start](#quick-start)
+- [Repository structure](#repository-structure)
+- [Use cases](#use-cases)
+  - [Run tests against committed stubs](#run-tests-against-committed-stubs-ephemeral-serve)
+  - [Push stubs to WireMock Cloud](#push-stubs-to-wiremock-cloud)
+  - [Pull stubs from WireMock Cloud](#pull-stubs-from-wiremock-cloud)
+  - [Bootstrap environment profiles](#bootstrap-environment-profiles)
+  - [Record API traffic and pull stubs](#record-api-traffic-and-pull-stubs)
+  - [Sidecar recording with mode-switch](#sidecar-recording-with-mode-switch)
+  - [Resolve mock URLs from a sidecar](#resolve-mock-urls-from-a-sidecar)
+  - [Promote stubs across environments](#promote-stubs-across-environments-gitops-flow)
+  - [Mode-switch with custom Runner config](#mode-switch-with-custom-runner-config)
+  - [Share mock URLs across jobs](#share-mock-urls-across-jobs)
+- [Inputs](#inputs)
+- [Outputs](#outputs)
+- [Workflow patterns](#workflow-patterns)
+- [Security](#security)
+
+---
+
+## Prerequisites
+
+1. A [WireMock Cloud](https://app.wiremock.cloud) account with at least one mock API project.
+2. A WireMock Cloud API token — find it at **Account → Security**.
+3. The token stored as a repository secret named `WIREMOCK_API_TOKEN`.
+
+To add the secret:
+```
+GitHub repo → Settings → Secrets and variables → Actions → New repository secret
+Name: WIREMOCK_API_TOKEN
+Value: <your token>
+```
+
+---
+
+## Quick start
+
+Run your tests against committed stubs with a single step:
+
+```yaml
+- name: Run tests against mock API
+  uses: wiremock/wiremock-runner-action@v1
+  with:
+    api-token: ${{ secrets.WIREMOCK_API_TOKEN }}
+    mode: serve
+    ports: '8080'
+    run: |
+      curl -sf "$WIREMOCK_URL/orders" | jq .
+      npm test
+```
+
+The action starts a WireMock Runner container, waits for it to be healthy, exposes `WIREMOCK_URL` to your `run` command, then stops the container when done.
+
+---
+
+## Repository structure
+
+The action reads your mock API configuration from `.wiremock/` at the root of your repository (configurable via `wiremock-dir`):
+
+```
+.wiremock/
+  wiremock.yaml               # service definitions
+  wiremock-development.yaml   # development profile (optional)
+  wiremock-staging.yaml       # staging profile (optional)
+  <service-name>/
+    mappings/                 # stub files (.json)
+    __files/                  # response body files
+```
+
+A minimal `wiremock.yaml` looks like:
+
+```yaml
+services:
+  orders-api:
+    type: cloud
+    cloud_id: <your-mock-api-id>
+    name: Orders API
+    port: 8080
+    originals:
+      base-url: https://api.example.com
+```
+
+Find `cloud_id` in your WireMock Cloud project URL: `https://app.wiremock.cloud/mock-apis/<cloud_id>/stubs`.
+
+---
+
+## Use cases
+
+### Run tests against committed stubs (ephemeral serve)
+
+Start a Runner with pre-committed stubs, run your test suite, and automatically stop the container.
+
+```yaml
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run tests against mock API
+        uses: wiremock/wiremock-runner-action@v1
+        with:
+          api-token: ${{ secrets.WIREMOCK_API_TOKEN }}
+          mode: serve
+          ports: '8080'
+          run: |
+            # $WIREMOCK_URL is set automatically
+            echo "Mock API running at $WIREMOCK_URL"
+            npm test
+```
+
+Your test suite hits `$WIREMOCK_URL` instead of the real upstream — no network dependency, no rate limits, fully reproducible.
+
+**Available environment variables inside `run:`**
+
+| Variable | Description |
+|---|---|
+| `WIREMOCK_URL` | Base URL of the primary mock service |
+| `WIREMOCK_URLS` | JSON object mapping service name → URL |
+| `WIREMOCK_MODE` | Current Runner mode (`serve` or `record-many`) |
+| `WIREMOCK_PROFILE` | Active profile name (empty if none) |
+
+---
+
+### Push stubs to WireMock Cloud
+
+Sync local stub files to WireMock Cloud after a merge to main:
+
+```yaml
+jobs:
+  push-stubs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Push stubs to development
+        uses: wiremock/wiremock-runner-action@v1
+        with:
+          api-token: ${{ secrets.WIREMOCK_API_TOKEN }}
+          command: push
+          all: 'true'
+          profile: development
+```
+
+`push` is idempotent — safe to run on every merge. Use `mock-api: orders-api` instead of `all: 'true'` to target a specific service.
+
+---
+
+### Pull stubs from WireMock Cloud
+
+Download the latest stubs from Cloud into your repository:
+
+```yaml
+- name: Pull stubs from Cloud
+  uses: wiremock/wiremock-runner-action@v1
+  with:
+    api-token: ${{ secrets.WIREMOCK_API_TOKEN }}
+    command: pull
+    all: 'true'
+    profile: development
+
+- name: Commit updated stubs
+  run: |
+    git config user.name "github-actions[bot]"
+    git config user.email "github-actions[bot]@users.noreply.github.com"
+    git add .wiremock/
+    git diff --staged --quiet || git commit -m "chore: sync stubs from WireMock Cloud"
+    git push
+```
+
+---
+
+### Bootstrap environment profiles
+
+Create environment profile files (`wiremock-development.yaml`, `wiremock-staging.yaml`) in your repository. This is idempotent — if the profile already exists, the step is skipped.
+
+```yaml
+- name: Create development profile
+  uses: wiremock/wiremock-runner-action@v1
+  with:
+    api-token: ${{ secrets.WIREMOCK_API_TOKEN }}
+    command: environments-create
+    profile: development
+
+- name: Create staging profile
+  uses: wiremock/wiremock-runner-action@v1
+  with:
+    api-token: ${{ secrets.WIREMOCK_API_TOKEN }}
+    command: environments-create
+    profile: staging
+```
+
+Run this once (or in a bootstrap workflow) before using `push`/`pull` with a profile.
+
+---
+
+### Record API traffic and pull stubs
+
+Point the Runner at your real upstream, run a journey script, and pull the recorded stubs — all in one step:
+
+```yaml
+- name: Record API traffic
+  uses: wiremock/wiremock-runner-action@v1
+  with:
+    api-token: ${{ secrets.WIREMOCK_API_TOKEN }}
+    mode: record-many
+    profile: development
+    ports: '8080'
+    post-run-pull: 'true'
+    run: bash scripts/record-journey.sh
+```
+
+With `post-run-pull: 'true'`, the action flushes buffered recordings to WireMock Cloud and immediately pulls the resulting stubs into `.wiremock/`. Commit the result to lock in the recorded stubs.
+
+---
+
+### Sidecar recording with mode-switch
+
+Use a long-lived sidecar container when you need fine-grained control over when recording starts and stops:
+
+```yaml
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    services:
+      wiremock-runner:
+        image: wiremock/wiremock-runner:latest
+        env:
+          WMC_DEFAULT_MODE: serve
+          WMC_ADMIN_PORT: 9999
+          WMC_API_TOKEN: ${{ secrets.WIREMOCK_API_TOKEN }}
+          WMC_RUN_PROFILE: development
+        ports:
+          - 8080:8080
+          - 9999:9999
+        options: >-
+          --health-cmd "curl -sf http://localhost:9999/__/health"
+          --health-interval 3s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve mock URLs
+        id: mocks
+        uses: wiremock/wiremock-runner-action@v1
+        with:
+          command: resolve-urls
+          runner-admin-url: http://localhost:9999
+
+      - name: Switch to record-many
+        uses: wiremock/wiremock-runner-action@v1
+        with:
+          command: mode-switch
+          target-mode: record-many
+          runner-admin-url: http://localhost:9999
+
+      - name: Run journey (traffic is recorded)
+        run: bash scripts/record-journey.sh
+        env:
+          WIREMOCK_URL: ${{ steps.mocks.outputs.mock-api-url }}
+
+      - name: Flush recordings and return to serve
+        uses: wiremock/wiremock-runner-action@v1
+        with:
+          api-token: ${{ secrets.WIREMOCK_API_TOKEN }}
+          command: record-flush-and-stop
+          runner-admin-url: http://localhost:9999
+
+      - name: Pull recorded stubs
+        uses: wiremock/wiremock-runner-action@v1
+        with:
+          api-token: ${{ secrets.WIREMOCK_API_TOKEN }}
+          command: pull
+          all: 'true'
+          profile: development
+```
+
+---
+
+### Resolve mock URLs from a sidecar
+
+When the Runner is a `services:` sidecar, use `resolve-urls` to get the live URLs and pass them to your tests:
+
+```yaml
+- name: Get mock URLs
+  id: mocks
+  uses: wiremock/wiremock-runner-action@v1
+  with:
+    command: resolve-urls
+    runner-admin-url: http://localhost:9999
+
+- name: Run tests
+  run: npm test
+  env:
+    API_BASE_URL: ${{ steps.mocks.outputs.mock-api-url }}
+```
+
+`resolve-urls` also confirms the Runner is healthy before returning.
+
+---
+
+### Promote stubs across environments (GitOps flow)
+
+Pull from development, push to staging — a clean promotion gate:
+
+```yaml
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pull from development
+        uses: wiremock/wiremock-runner-action@v1
+        with:
+          api-token: ${{ secrets.WIREMOCK_API_TOKEN }}
+          command: pull
+          all: 'true'
+          profile: development
+
+      - name: Push to staging
+        uses: wiremock/wiremock-runner-action@v1
+        with:
+          api-token: ${{ secrets.WIREMOCK_API_TOKEN }}
+          command: push
+          all: 'true'
+          profile: staging
+```
+
+Trigger this on a manual `workflow_dispatch` event or after integration tests pass.
+
+---
+
+### Mode-switch with custom Runner config
+
+Switch to `record-many` with additional recording configuration:
+
+```yaml
+- name: Start recording with batch config
+  uses: wiremock/wiremock-runner-action@v1
+  with:
+    command: mode-switch
+    target-mode: record-many
+    runner-admin-url: http://localhost:9999
+    runner-config: |
+      max-batch-requests: 50
+```
+
+---
+
+### Share mock URLs across jobs
+
+Export URLs from one job and consume them in downstream jobs:
+
+```yaml
+jobs:
+  setup-mocks:
+    runs-on: ubuntu-latest
+    outputs:
+      mock-api-url: ${{ steps.mocks.outputs.mock-api-url }}
+      mock-api-urls: ${{ steps.mocks.outputs.mock-api-urls }}
+    services:
+      wiremock-runner:
+        image: wiremock/wiremock-runner:latest
+        env:
+          WMC_DEFAULT_MODE: serve
+          WMC_ADMIN_PORT: 9999
+          WMC_API_TOKEN: ${{ secrets.WIREMOCK_API_TOKEN }}
+        ports:
+          - 8080:8080
+          - 9999:9999
+        options: >-
+          --health-cmd "curl -sf http://localhost:9999/__/health"
+          --health-interval 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve URLs
+        id: mocks
+        uses: wiremock/wiremock-runner-action@v1
+        with:
+          command: resolve-urls
+          runner-admin-url: http://localhost:9999
+
+  integration-tests:
+    needs: setup-mocks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run tests with mock URL
+        run: npm test
+        env:
+          API_BASE_URL: ${{ needs.setup-mocks.outputs.mock-api-url }}
+```
+
+> **Note:** `mock-api-urls` is a JSON object — parse it with `fromJson()` in expressions or `jq` / `json.load()` in shell/Python.
+
+---
+
+## Inputs
+
+### Shared
+
+| Input | Required | Default | Description |
+|---|---|---|---|
+| `api-token` | See notes | — | WireMock Cloud API token. Required for `push`, `pull`, `environments-create`, and `post-run-pull`. |
+| `wiremock-dir` | No | `.wiremock` | Path to the directory containing `wiremock.yaml`, relative to the workspace root. |
+
+### Ephemeral container mode (`run:`)
+
+| Input | Required | Default | Description |
+|---|---|---|---|
+| `run` | — | — | Shell command to execute while the Runner is live. Setting this activates ephemeral mode. |
+| `mode` | No | `serve` | Runner mode: `serve` or `record-many`. |
+| `ports` | No | `8080` | Comma-separated mock API ports to expose. Must match `wiremock.yaml`. |
+| `runner-admin-port` | No | `9999` | Port for the Runner admin interface. |
+| `runner-version` | No | `latest` | Docker image tag for `wiremock/wiremock-runner`. |
+| `profile` | No | — | Environment profile name (e.g. `development`, `staging`). |
+| `post-run-pull` | No | `false` | When `true` and `mode` is `record-many`, pull stubs from Cloud after recording stops. Requires `api-token`. |
+| `health-check-retries` | No | `30` | Poll attempts before failing the health check. |
+| `health-check-interval` | No | `2` | Seconds between health check polls. |
+
+### CLI command mode (`command:`)
+
+| Input | Required | Default | Description |
+|---|---|---|---|
+| `command` | — | — | One of: `push`, `pull`, `environments-create`, `record-flush`, `record-stop`, `record-flush-and-stop`, `mode-switch`, `resolve-urls`. |
+| `all` | No | `false` | Pass `--all` to `push`/`pull` to process every service. |
+| `mock-api` | No | — | Target a specific service by name (alternative to `all`). |
+| `profile` | No | — | Environment profile for `push`, `pull`, `environments-create`. |
+| `runner-admin-url` | No | `http://localhost:9999` | Admin URL of a running Runner. Used by `record-*`, `mode-switch`, `resolve-urls`. |
+| `target-mode` | No | — | Target mode for `mode-switch`: `serve` or `record-many`. |
+| `runner-config` | No | — | YAML string of additional config fields for `mode-switch` (e.g. `max-batch-requests: 50`). |
+| `force` | No | `false` | For `environments-create`: fail if profile already exists instead of skipping. |
+| `wiremock-cli-version` | No | `latest` | npm version tag for `@wiremock/cli`. |
+
+---
+
+## Outputs
+
+| Output | Set by | Description |
+|---|---|---|
+| `mock-api-url` | `run:`, `resolve-urls` | Base URL of the primary mock service. |
+| `mock-api-urls` | `run:`, `resolve-urls` | JSON object mapping service name → URL. |
+| `runner-admin-url` | `run:`, `resolve-urls` | Runner admin URL (confirmed healthy). |
+| `recording-flushed` | `record-flush`, `record-flush-and-stop`, `run:` with `record-many` | `true` if recordings were flushed successfully. |
+
+---
+
+## Workflow patterns
+
+### Ephemeral vs sidecar
+
+| | Ephemeral (`run:`) | Sidecar (`services:`) |
+|---|---|---|
+| **Lifetime** | Scoped to one step | Lives for the full job |
+| **Best for** | Self-contained test steps | Multi-step flows, mode-switching |
+| **Cleanup** | Automatic (post step) | Automatic (job teardown) |
+| **URL access** | `$WIREMOCK_URL` env var | Via `resolve-urls` step outputs |
+| **Cross-job URLs** | Not supported | Yes, via job `outputs:` |
+
+### Single API vs multiple APIs
+
+- Use `all: 'true'` with `push`/`pull` to operate on every service in `wiremock.yaml`.
+- Use `mock-api: <name>` to target one service.
+- Use `ports: '8080,8081'` to expose multiple services from one ephemeral container.
+
+### Profile-based environments
+
+Profiles let you maintain separate WireMock Cloud environments (e.g. `development` for active work, `staging` for pre-release):
+
+1. Run `environments-create` once to generate `wiremock-<profile>.yaml`.
+2. Commit the generated file.
+3. Use `profile: development` on all subsequent `push`/`pull` calls.
+
+---
+
+## Security
+
+- Store your API token as a **repository secret** — never hardcode it in workflow files.
+- Use `permissions: contents: read` (principle of least privilege) on jobs that only run tests.
+- Jobs that push to Cloud or commit stubs back need `contents: write`.
+- Pin the action to a specific release tag (`@v1.2.3`) or commit SHA for supply-chain safety.
+- The action masks the `api-token` value immediately on startup so it never appears in logs.
