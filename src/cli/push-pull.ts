@@ -13,12 +13,12 @@ export async function pushPull(
   inputs: Inputs,
   wiremockDir: string
 ): Promise<void> {
-  const args = [operation, '--dir', wiremockDir]
+  const args = [operation, 'mock-api', '--wiremock-dir', wiremockDir]
 
   if (inputs.all) {
     args.push('--all')
   } else if (inputs['mock-api']) {
-    args.push('--mock-api', inputs['mock-api'])
+    args.push(inputs['mock-api'])
   }
 
   if (inputs.profile) {
@@ -64,7 +64,7 @@ export async function environmentsCreate(inputs: Inputs, wiremockDir: string): P
     }
   }
 
-  const args = ['environments', 'create', '--profile', profile]
+  const args = ['environments', 'create', '--profile', profile, '--wiremock-dir', wiremockDir]
 
   let stderr = ''
   const exitCode = await exec.exec('wiremock', args, {

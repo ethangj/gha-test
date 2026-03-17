@@ -83,6 +83,7 @@ jobs:
           WMC_DEFAULT_MODE: serve
           WMC_ADMIN_PORT: 9999
           WMC_API_TOKEN: ${{ secrets.WIREMOCK_API_TOKEN }}
+          WMC_RUN_PROFILE: development
         ports:
           - 8080:8080
           - 9999:9999
@@ -399,6 +400,7 @@ jobs:
           WMC_DEFAULT_MODE: serve
           WMC_ADMIN_PORT: 9999
           WMC_API_TOKEN: ${{ secrets.WIREMOCK_API_TOKEN }}
+          WMC_RUN_PROFILE: development
         ports:
           - 8080:8080
           - 9999:9999
