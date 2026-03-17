@@ -1,0 +1,20 @@
+{
+  "id": "a1b2c3d4-0001-0000-0000-000000000001",
+  "name": "Get todo by ID",
+  "request": {
+    "method": "GET",
+    "urlPathPattern": "/todos/[0-9]+"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "userId": 1,
+      "id": 1,
+      "title": "stub: buy groceries",
+      "completed": false
+    }
+  }
+}

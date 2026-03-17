@@ -1,0 +1,8 @@
+services:
+  todos-api:
+    type: cloud
+    cloud_id: k5qm0
+    name: GHA Test
+    port: 8080
+    originals:
+      base-url: https://jsonplaceholder.typicode.com
