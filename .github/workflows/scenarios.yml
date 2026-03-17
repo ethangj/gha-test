@@ -14,12 +14,13 @@ permissions: {}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # UC-4: Ephemeral serve — start Runner with pre-committed stubs, run tests
-# No Cloud credentials required.
+# Requires: WIREMOCK_API_TOKEN (Runner always requires token to start)
 # ─────────────────────────────────────────────────────────────────────────────
 jobs:
   uc4-ephemeral-serve:
     name: 'UC-4: Ephemeral serve'
     runs-on: ubuntu-latest
+    environment: integration
     permissions:
       contents: read
     steps:
@@ -29,6 +30,7 @@ jobs:
         id: mocks
         uses: ./
         with:
+          api-token: ${{ secrets.WIREMOCK_API_TOKEN }}
           mode: serve
           ports: '8080'
           run: |
@@ -63,11 +65,12 @@ jobs:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # UC-7 + UC-10: Resolve URLs (sidecar pattern) and cross-job URL sharing
-# No Cloud credentials required.
+# Requires: WIREMOCK_API_TOKEN (Runner always requires token to start)
 # ─────────────────────────────────────────────────────────────────────────────
   uc7-resolve-urls:
     name: 'UC-7: Resolve URLs (sidecar)'
     runs-on: ubuntu-latest
+    environment: integration
     permissions:
       contents: read
     outputs:
@@ -79,6 +82,7 @@ jobs:
         env:
           WMC_DEFAULT_MODE: serve
           WMC_ADMIN_PORT: 9999
+          WMC_API_TOKEN: ${{ secrets.WIREMOCK_API_TOKEN }}
         ports:
           - 8080:8080
           - 9999:9999
@@ -380,11 +384,12 @@ jobs:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # UC-9: mode-switch with runner-config (batched recording config)
-# No Cloud credentials required — just exercises the Runner admin API.
+# Requires: WIREMOCK_API_TOKEN (Runner always requires token to start)
 # ─────────────────────────────────────────────────────────────────────────────
   uc9-mode-switch-config:
     name: 'UC-9: mode-switch with runner-config'
     runs-on: ubuntu-latest
+    environment: integration
     permissions:
       contents: read
     services:
@@ -393,6 +398,7 @@ jobs:
         env:
           WMC_DEFAULT_MODE: serve
           WMC_ADMIN_PORT: 9999
+          WMC_API_TOKEN: ${{ secrets.WIREMOCK_API_TOKEN }}
         ports:
           - 8080:8080
           - 9999:9999
