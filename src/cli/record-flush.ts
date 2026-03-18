@@ -1,5 +1,5 @@
 import * as core from '@actions/core'
-import * as exec from '@actions/exec'
+import { HttpClient } from '@actions/http-client'
 import * as yaml from 'js-yaml'
 import { ActionFatalError } from '../errors'
 import type { Inputs } from '../inputs'
@@ -8,21 +8,8 @@ const HEALTH_PATH = '/__/health'
 const FLUSH_PATH = '/v1/record-many/flush'
 const MODE_SWITCH_PATH = '/v1/mode'
 
-interface CurlResult {
-  exitCode: number
-  httpCode: string
-  body: string
-}
-
-async function curlRequest(args: string[]): Promise<CurlResult> {
-  let output = ''
-  const exitCode = await exec.exec('curl', args, {
-    silent: true,
-    ignoreReturnCode: true,
-    listeners: { stdout: (d: Buffer) => { output += d.toString() } },
-  })
-  const parts = output.trim().split('\n')
-  return { exitCode, httpCode: parts[parts.length - 1], body: parts.slice(0, -1).join('\n') }
+function isSuccess(statusCode: number | undefined): boolean {
+  return statusCode !== undefined && statusCode >= 200 && statusCode < 300
 }
 
 /**
@@ -31,12 +18,17 @@ async function curlRequest(args: string[]): Promise<CurlResult> {
  */
 export async function verifyRunnerReachable(adminUrl: string): Promise<void> {
   const healthUrl = `${adminUrl.replace(/\/$/, '')}${HEALTH_PATH}`
+  const client = new HttpClient('wiremock-runner-action', [], { socketTimeout: 5000 })
 
-  const { exitCode, httpCode } = await curlRequest(
-    ['-s', '--max-time', '5', '--output', '/dev/null', '--write-out', '%{http_code}', healthUrl]
-  )
+  let statusCode: number | undefined
+  try {
+    const res = await client.get(healthUrl)
+    statusCode = res.message.statusCode
+  } catch {
+    // connection refused, timeout, etc — statusCode stays undefined
+  }
 
-  if (exitCode !== 0 || !httpCode.startsWith('2')) {
+  if (!isSuccess(statusCode)) {
     core.setFailed(
       `::error title=Runner Not Reachable::Cannot connect to WireMock Runner at ${adminUrl}. Ensure:\n` +
         `1. The Runner container or service is started and healthy before this step\n` +
@@ -61,18 +53,21 @@ export async function recordFlush(inputs: Inputs): Promise<boolean> {
     ? JSON.stringify({ services: includeServices.split(',').map(s => s.trim()) })
     : '{}'
 
-  const { exitCode, httpCode, body: responseBody } = await curlRequest([
-    '-s', '-X', 'POST',
-    '-H', 'Content-Type: application/json',
-    '-d', body,
-    '--output', '-',
-    '--write-out', '\n%{http_code}',
-    flushUrl,
-  ])
+  const client = new HttpClient('wiremock-runner-action')
+  let statusCode: number | undefined
+  let responseBody = ''
 
-  if (exitCode !== 0 || !httpCode.startsWith('2')) {
+  try {
+    const res = await client.post(flushUrl, body, { 'Content-Type': 'application/json' })
+    statusCode = res.message.statusCode
+    responseBody = await res.readBody()
+  } catch {
+    // connection error — statusCode stays undefined
+  }
+
+  if (!isSuccess(statusCode)) {
     core.warning(
-      `Recording flush returned HTTP ${httpCode || 'no response'}: ${responseBody}\n` +
+      `Recording flush returned HTTP ${statusCode ?? 'no response'}: ${responseBody}\n` +
         `Recordings in progress > perfect flush. Recordings up to the last batch may still have been saved ` +
         `if max-batch-requests was configured.\n` +
         `To fail the step on flush failure, check: steps.<id>.outputs.recording-flushed == 'false'`
@@ -80,7 +75,7 @@ export async function recordFlush(inputs: Inputs): Promise<boolean> {
     return false
   }
 
-  core.info(`Recording flush succeeded (HTTP ${httpCode})`)
+  core.info(`Recording flush succeeded (HTTP ${statusCode})`)
   return true
 }
 
@@ -115,17 +110,20 @@ export async function modeSwitch(inputs: Inputs): Promise<void> {
   }
   const body = JSON.stringify(bodyObj)
 
-  const { exitCode, httpCode, body: responseBody } = await curlRequest([
-    '-s', '-X', 'PUT',
-    '-H', 'Content-Type: application/json',
-    '-d', body,
-    '--output', '-',
-    '--write-out', '\n%{http_code}',
-    switchUrl,
-  ])
+  const client = new HttpClient('wiremock-runner-action')
+  let statusCode: number | undefined
+  let responseBody = ''
 
-  if (exitCode !== 0 || !httpCode.startsWith('2')) {
-    if (httpCode === '409') {
+  try {
+    const res = await client.put(switchUrl, body, { 'Content-Type': 'application/json' })
+    statusCode = res.message.statusCode
+    responseBody = await res.readBody()
+  } catch {
+    // connection error
+  }
+
+  if (!isSuccess(statusCode)) {
+    if (statusCode === 409) {
       const isAlreadyInMode = responseBody.includes('Runner is already in')
       if (isAlreadyInMode) {
         core.warning(
@@ -136,7 +134,7 @@ export async function modeSwitch(inputs: Inputs): Promise<void> {
     }
     core.setFailed(
       `::error title=Mode Switch Failed::Could not switch Runner to ${targetMode} mode. ` +
-        `HTTP ${httpCode}: ${responseBody}`
+        `HTTP ${statusCode}: ${responseBody}`
     )
     throw new ActionFatalError()
   }

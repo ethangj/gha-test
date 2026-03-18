@@ -515,3 +515,11 @@ Profiles let you maintain separate WireMock Cloud environments (e.g. `developmen
 > any process with access to the Docker socket. On self-hosted runners with concurrent jobs or
 > shared Docker socket access, other jobs could read the token via `docker inspect`. Use
 > GitHub-hosted runners (`ubuntu-latest`) for workloads where this is a concern.
+
+> [!WARNING]
+> **Shell injection via `run:` input:** The `run:` input is executed directly as a shell command
+> with `bash -c`. The subprocess inherits the full runner environment, including `GITHUB_TOKEN` and
+> all workflow secrets. **Never populate `run:` from untrusted GitHub event data** such as PR
+> titles, issue bodies, or `workflow_dispatch` inputs without sanitization. For example,
+> `run: ${{ github.event.pull_request.title }}` would execute the PR title as arbitrary shell code,
+> allowing any contributor to run commands on your runner.

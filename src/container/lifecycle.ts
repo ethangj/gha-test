@@ -4,6 +4,7 @@ import * as os from 'os'
 import * as path from 'path'
 import * as core from '@actions/core'
 import * as exec from '@actions/exec'
+import { HttpClient } from '@actions/http-client'
 import { retry } from '../utils/retry'
 import { parsePorts } from './port-resolver'
 import type { Inputs } from '../inputs'
@@ -92,22 +93,18 @@ export async function waitForHealth(
 
   await retry(
     async () => {
-      let output = ''
-      const exitCode = await exec.exec(
-        'curl',
-        ['-s', '--max-time', '3', '--output', '/dev/null', '--write-out', '%{http_code}', healthUrl],
-        {
-          silent: true,
-          ignoreReturnCode: true,
-          listeners: {
-            stdout: (data: Buffer) => { output += data.toString() },
-          },
-        }
-      )
-      if (exitCode !== 0 || !output.startsWith('2')) {
-        throw new Error(`Health check failed: HTTP ${output || 'no response'}`)
+      const client = new HttpClient('wiremock-runner-action', [], { socketTimeout: 3000 })
+      let statusCode: number | undefined
+      try {
+        const res = await client.get(healthUrl)
+        statusCode = res.message.statusCode
+      } catch {
+        // connection refused or timeout
       }
-      core.info(`Runner is healthy (HTTP ${output})`)
+      if (statusCode === undefined || statusCode < 200 || statusCode >= 300) {
+        throw new Error(`Health check failed: HTTP ${statusCode ?? 'no response'}`)
+      }
+      core.info(`Runner is healthy (HTTP ${statusCode})`)
     },
     {
       retries,
