@@ -1,6 +1,7 @@
 import * as path from 'path'
 import * as core from '@actions/core'
 import * as exec from '@actions/exec'
+import { ActionFatalError } from './errors'
 import { getInputs } from './inputs'
 import { setOutputs } from './outputs'
 import { writeSummary } from './summary'
@@ -30,12 +31,11 @@ async function runPostStep(): Promise<void> {
 async function runMainStep(): Promise<void> {
   core.saveState('isPost', 'true')
 
-  const inputs = getInputs()
+  // Mask the API token before validation to prevent leaks in Zod error output
+  const rawToken = core.getInput('api-token')
+  if (rawToken) core.setSecret(rawToken)
 
-  // Mask the API token immediately — before any logging
-  if (inputs['api-token']) {
-    core.setSecret(inputs['api-token'])
-  }
+  const inputs = getInputs()
 
   // Resolve wiremock-dir relative to workspace with path traversal guard
   const workspace = process.env.GITHUB_WORKSPACE ?? process.cwd()
@@ -46,12 +46,12 @@ async function runMainStep(): Promise<void> {
       `Invalid wiremock-dir: resolved path "${wiremockDir}" is outside the workspace "${workspace}". ` +
         `Do not use paths containing ".." or absolute paths outside the workspace.`
     )
-    process.exit(1)
+    throw new ActionFatalError()
   }
 
   // ── Ephemeral container mode (run: input) ──────────────────────────────────
   if (inputs.run) {
-    await runEphemeralMode(inputs, wiremockDir, workspace)
+    await runEphemeralMode(inputs, wiremockDir)
     return
   }
 
@@ -64,8 +64,7 @@ async function runMainStep(): Promise<void> {
 
 async function runEphemeralMode(
   inputs: ReturnType<typeof getInputs>,
-  wiremockDir: string,
-  _workspace: string
+  wiremockDir: string
 ): Promise<void> {
   // Reject Windows — Docker Linux containers not supported
   if (process.platform === 'win32') {
@@ -73,7 +72,7 @@ async function runEphemeralMode(
       `::error title=Unsupported Runner OS::Ephemeral container mode requires Docker (Linux containers) ` +
         `and is not supported on Windows runners. Use ubuntu-latest, or use the sidecar services: pattern.`
     )
-    process.exit(1)
+    throw new ActionFatalError()
   }
 
   // Verify Docker is available
@@ -86,7 +85,7 @@ async function runEphemeralMode(
         `2. Use the sidecar pattern (services: block) instead\n` +
         `See: https://docs.wiremock.io/runner/overview`
     )
-    process.exit(1)
+    throw new ActionFatalError()
   }
 
   // Start container
@@ -115,7 +114,7 @@ async function runEphemeralMode(
     } else {
       core.setFailed(`Failed to start WireMock Runner container: ${err}`)
     }
-    process.exit(1)
+    throw new ActionFatalError()
   }
 
   // Wait for health
@@ -136,7 +135,7 @@ async function runEphemeralMode(
         `- Invalid WMC_API_TOKEN\n` +
         `- wiremock.yaml not found at .wiremock/wiremock.yaml`
     )
-    process.exit(1)
+    throw new ActionFatalError()
   }
 
   // Resolve URLs
@@ -181,8 +180,7 @@ async function runEphemeralMode(
   }
 
   // Post-run pull (if requested and recording mode).
-  // Run exec directly so a failure emits a warning instead of failing the step
-  // (pushPull calls process.exit on error which bypasses the try/catch).
+  // Run exec directly so a failure emits a warning instead of failing the step.
   if (inputs['post-run-pull'] && inputs.mode === 'record-many' && inputs['api-token']) {
     try {
       await installCli(inputs['wiremock-cli-version'])
@@ -228,7 +226,7 @@ async function runEphemeralMode(
 
   if (runFailed) {
     core.setFailed('Run command failed (see above)')
-    process.exit(1)
+    throw new ActionFatalError()
   }
 }
 
@@ -318,6 +316,9 @@ async function run(): Promise<void> {
 }
 
 run().catch(err => {
-  core.setFailed(err instanceof Error ? err.message : String(err))
+  // ActionFatalError means core.setFailed was already called; don't overwrite the annotation.
+  if (!(err instanceof ActionFatalError)) {
+    core.setFailed(err instanceof Error ? err.message : String(err))
+  }
   process.exit(1)
 })

@@ -4,6 +4,8 @@ import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
 import { pushPull, environmentsCreate } from '../../cli/push-pull'
+import { ActionFatalError } from '../../errors'
+import { makeInputs as makeBaseInputs } from '../fixtures/inputs'
 import type { Inputs } from '../../inputs'
 
 jest.mock('@actions/exec')
@@ -12,10 +14,6 @@ jest.mock('@actions/core')
 const mockExec = exec.exec as jest.MockedFunction<typeof exec.exec>
 const mockSetFailed = core.setFailed as jest.MockedFunction<typeof core.setFailed>
 const mockNotice = core.notice as jest.MockedFunction<typeof core.notice>
-
-const mockExit = jest.spyOn(process, 'exit').mockImplementation((code?: number | string | null) => {
-  throw new Error(`process.exit(${code})`)
-})
 
 let tmpDir: string
 
@@ -30,22 +28,7 @@ afterEach(() => {
 })
 
 function makeInputs(overrides: Partial<Inputs> = {}): Inputs {
-  return {
-    'api-token': 'test-token',
-    'wiremock-dir': tmpDir,
-    'runner-admin-url': 'http://localhost:9999',
-    'runner-admin-port': 9999,
-    'runner-version': 'latest',
-    mode: 'serve',
-    ports: '8080',
-    'post-run-pull': false,
-    all: false,
-    force: false,
-    'wiremock-cli-version': 'latest',
-    'health-check-retries': 30,
-    'health-check-interval': 2,
-    ...overrides,
-  } as Inputs
+  return makeBaseInputs({ 'wiremock-dir': tmpDir, ...overrides })
 }
 
 // ─── pushPull ────────────────────────────────────────────────────────────────
@@ -94,7 +77,7 @@ describe('pushPull', () => {
       options?.listeners?.stderr?.(Buffer.from('Error: 401 Unauthorized'))
       return 1
     })
-    await expect(pushPull('push', makeInputs({ all: true }), tmpDir)).rejects.toThrow('process.exit')
+    await expect(pushPull('push', makeInputs({ all: true }), tmpDir)).rejects.toThrow(ActionFatalError)
     expect(mockSetFailed).toHaveBeenCalledWith(expect.stringContaining('Authentication Failed'))
   })
 
@@ -103,7 +86,7 @@ describe('pushPull', () => {
       options?.listeners?.stderr?.(Buffer.from('profile file not found: development'))
       return 1
     })
-    await expect(pushPull('pull', makeInputs({ all: true, profile: 'development' }), tmpDir)).rejects.toThrow('process.exit')
+    await expect(pushPull('pull', makeInputs({ all: true, profile: 'development' }), tmpDir)).rejects.toThrow(ActionFatalError)
     expect(mockSetFailed).toHaveBeenCalledWith(expect.stringContaining('Profile Not Found'))
   })
 
@@ -112,7 +95,7 @@ describe('pushPull', () => {
       options?.listeners?.stderr?.(Buffer.from('some unknown error'))
       return 1
     })
-    await expect(pushPull('push', makeInputs({ all: true }), tmpDir)).rejects.toThrow('process.exit')
+    await expect(pushPull('push', makeInputs({ all: true }), tmpDir)).rejects.toThrow(ActionFatalError)
     expect(mockSetFailed).toHaveBeenCalledWith(expect.stringContaining('push failed'))
   })
 
@@ -125,7 +108,7 @@ describe('pushPull', () => {
       return 1
     })
     // Should throw process.exit (from our handler), not from exec
-    await expect(pushPull('push', makeInputs({ all: true }), tmpDir)).rejects.toThrow('process.exit')
+    await expect(pushPull('push', makeInputs({ all: true }), tmpDir)).rejects.toThrow(ActionFatalError)
   })
 })
 
@@ -154,7 +137,7 @@ describe('environmentsCreate', () => {
     fs.writeFileSync(profilePath, 'services: {}', 'utf8')
     await expect(
       environmentsCreate(makeInputs({ profile: 'staging', force: true }), tmpDir)
-    ).rejects.toThrow('process.exit')
+    ).rejects.toThrow(ActionFatalError)
     expect(mockSetFailed).toHaveBeenCalledWith(expect.stringContaining('Profile Already Exists'))
   })
 
@@ -171,11 +154,8 @@ describe('environmentsCreate', () => {
     })
     await expect(
       environmentsCreate(makeInputs({ profile: 'development' }), tmpDir)
-    ).rejects.toThrow('process.exit')
+    ).rejects.toThrow(ActionFatalError)
     expect(mockSetFailed).toHaveBeenCalled()
   })
 })
 
-afterAll(() => {
-  mockExit.mockRestore()
-})

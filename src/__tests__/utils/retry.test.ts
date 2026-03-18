@@ -49,4 +49,11 @@ describe('retry', () => {
     await expect(retry(fn, { retries: 1, intervalSeconds: 0 })).rejects.toThrow('fail')
     expect(fn).toHaveBeenCalledTimes(1)
   })
+
+  it('calls fn once when retries: 0', async () => {
+    const fn = jest.fn().mockResolvedValue('ok')
+    const result = await retry(fn, { retries: 0, intervalSeconds: 0 })
+    expect(result).toBe('ok')
+    expect(fn).toHaveBeenCalledTimes(1)
+  })
 })

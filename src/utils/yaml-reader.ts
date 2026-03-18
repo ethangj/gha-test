@@ -26,8 +26,12 @@ export function readWireMockConfig(wiremockDir: string, profile?: string): WireM
     )
   }
 
-  const baseConfig = yaml.load(fs.readFileSync(basePath, 'utf8')) as WireMockConfig
-  if (!baseConfig?.services) {
+  const rawBase = yaml.load(fs.readFileSync(basePath, 'utf8'))
+  if (!rawBase || typeof rawBase !== 'object' || Array.isArray(rawBase)) {
+    throw new Error(`wiremock.yaml at ${basePath} must be a YAML mapping, got ${Array.isArray(rawBase) ? 'array' : typeof rawBase}`)
+  }
+  const baseConfig = rawBase as WireMockConfig
+  if (!baseConfig.services) {
     throw new Error(`wiremock.yaml at ${basePath} has no 'services' key`)
   }
 
@@ -46,7 +50,11 @@ export function readWireMockConfig(wiremockDir: string, profile?: string): WireM
     )
   }
 
-  const profileConfig = yaml.load(fs.readFileSync(profilePath, 'utf8')) as Partial<WireMockConfig>
+  const rawProfile = yaml.load(fs.readFileSync(profilePath, 'utf8'))
+  const profileConfig: Partial<WireMockConfig> =
+    rawProfile && typeof rawProfile === 'object' && !Array.isArray(rawProfile)
+      ? (rawProfile as Partial<WireMockConfig>)
+      : {}
 
   // Merge: profile overrides base service fields (except type)
   const merged: WireMockConfig = {

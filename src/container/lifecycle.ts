@@ -1,4 +1,7 @@
 import { randomBytes } from 'crypto'
+import * as fs from 'fs'
+import * as os from 'os'
+import * as path from 'path'
 import * as core from '@actions/core'
 import * as exec from '@actions/exec'
 import { retry } from '../utils/retry'
@@ -43,8 +46,14 @@ export async function startContainer(inputs: Inputs, wiremockDir: string): Promi
   args.push('-e', `WMC_DEFAULT_MODE=${inputs.mode}`)
   args.push('-e', `WMC_ADMIN_PORT=${adminPort}`)
 
+  // Write token to a temp file so it doesn't appear in the process list.
+  // docker inspect can still reveal env vars to anyone with Docker socket access,
+  // but this prevents exposure via /proc/<pid>/cmdline on shared runners.
+  let envFile: string | undefined
   if (inputs['api-token']) {
-    args.push('-e', `WMC_API_TOKEN=${inputs['api-token']}`)
+    envFile = path.join(os.tmpdir(), `wmc-env-${randomBytes(8).toString('hex')}`)
+    fs.writeFileSync(envFile, `WMC_API_TOKEN=${inputs['api-token']}\n`, { mode: 0o600 })
+    args.push('--env-file', envFile)
   }
 
   if (inputs.profile) {
@@ -58,7 +67,13 @@ export async function startContainer(inputs: Inputs, wiremockDir: string): Promi
   args.push(image)
 
   core.info(`Starting WireMock Runner container: ${containerName}`)
-  await exec.exec('docker', args)
+  try {
+    await exec.exec('docker', args)
+  } finally {
+    if (envFile) {
+      try { fs.unlinkSync(envFile) } catch { /* ignore — file may not exist */ }
+    }
+  }
 
   return containerName
 }

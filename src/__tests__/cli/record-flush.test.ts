@@ -7,6 +7,8 @@ import {
   recordStop,
   recordFlushAndStop,
 } from '../../cli/record-flush'
+import { ActionFatalError } from '../../errors'
+import { makeInputs } from '../fixtures/inputs'
 import type { Inputs } from '../../inputs'
 
 jest.mock('@actions/exec')
@@ -16,30 +18,6 @@ const mockExec = exec.exec as jest.MockedFunction<typeof exec.exec>
 const mockSetFailed = core.setFailed as jest.MockedFunction<typeof core.setFailed>
 const mockWarning = core.warning as jest.MockedFunction<typeof core.warning>
 const mockInfo = core.info as jest.MockedFunction<typeof core.info>
-
-// Prevent process.exit from killing the test runner
-const mockExit = jest.spyOn(process, 'exit').mockImplementation((code?: number | string | null) => {
-  throw new Error(`process.exit(${code})`)
-})
-
-function makeInputs(overrides: Partial<Inputs> = {}): Inputs {
-  return {
-    'api-token': 'test-token',
-    'wiremock-dir': '.wiremock',
-    'runner-admin-url': 'http://localhost:9999',
-    'runner-admin-port': 9999,
-    'runner-version': 'latest',
-    mode: 'serve',
-    ports: '8080',
-    'post-run-pull': false,
-    all: false,
-    force: false,
-    'wiremock-cli-version': 'latest',
-    'health-check-retries': 30,
-    'health-check-interval': 2,
-    ...overrides,
-  } as Inputs
-}
 
 // Helper: make exec simulate an HTTP response
 function mockHttpExec(httpCode: string, body = '', exitCode = 0) {
@@ -67,13 +45,13 @@ describe('verifyRunnerReachable', () => {
 
   it('calls setFailed and exits when health check returns non-2xx', async () => {
     mockHttpExec('503')
-    await expect(verifyRunnerReachable('http://localhost:9999')).rejects.toThrow('process.exit')
+    await expect(verifyRunnerReachable('http://localhost:9999')).rejects.toThrow(ActionFatalError)
     expect(mockSetFailed).toHaveBeenCalled()
   })
 
   it('calls setFailed and exits when curl fails (exit code != 0)', async () => {
     mockHttpExec('', '', 7) // connection refused
-    await expect(verifyRunnerReachable('http://localhost:9999')).rejects.toThrow('process.exit')
+    await expect(verifyRunnerReachable('http://localhost:9999')).rejects.toThrow(ActionFatalError)
     expect(mockSetFailed).toHaveBeenCalled()
   })
 })
@@ -163,7 +141,7 @@ describe('modeSwitch', () => {
     })
     await expect(
       modeSwitch(makeInputs({ 'target-mode': 'record-many' }))
-    ).rejects.toThrow('process.exit')
+    ).rejects.toThrow(ActionFatalError)
     expect(mockSetFailed).toHaveBeenCalledWith(expect.stringContaining('Mode Switch Failed'))
   })
 
@@ -171,7 +149,7 @@ describe('modeSwitch', () => {
     mockHttpExec('500', '{"error":"server error"}')
     await expect(
       modeSwitch(makeInputs({ 'target-mode': 'serve' }))
-    ).rejects.toThrow('process.exit')
+    ).rejects.toThrow(ActionFatalError)
     expect(mockSetFailed).toHaveBeenCalled()
   })
 
@@ -253,6 +231,3 @@ describe('recordFlushAndStop', () => {
   })
 })
 
-afterAll(() => {
-  mockExit.mockRestore()
-})

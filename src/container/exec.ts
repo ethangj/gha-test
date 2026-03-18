@@ -17,7 +17,9 @@ export async function runUserCommand(options: RunCommandOptions): Promise<void> 
 
   const exitCode = await exec.exec('bash', ['-c', command], {
     env: {
-      ...(process.env as Record<string, string>),
+      ...Object.fromEntries(
+        Object.entries(process.env).filter((kv): kv is [string, string] => kv[1] !== undefined)
+      ),
       ...env,
     },
   })

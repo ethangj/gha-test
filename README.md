@@ -507,3 +507,11 @@ Profiles let you maintain separate WireMock Cloud environments (e.g. `developmen
 - Jobs that push to Cloud or commit stubs back need `contents: write`.
 - Pin the action to a specific release tag (`@v1.2.3`) or commit SHA for supply-chain safety.
 - The action masks the `api-token` value immediately on startup so it never appears in logs.
+
+> [!WARNING]
+> **Self-hosted runners:** When using ephemeral container mode (`run:` input), the API token is
+> passed to the WireMock Runner container as an environment variable. While the action avoids
+> exposing it in the process list, `docker inspect <container>` reveals all container env vars to
+> any process with access to the Docker socket. On self-hosted runners with concurrent jobs or
+> shared Docker socket access, other jobs could read the token via `docker inspect`. Use
+> GitHub-hosted runners (`ubuntu-latest`) for workloads where this is a concern.

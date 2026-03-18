@@ -1,5 +1,32 @@
 import { z } from 'zod'
 import * as core from '@actions/core'
+import { ActionFatalError } from './errors'
+
+// Semver tag: "latest" or "1.2.3" or "1.2.3-beta.1"
+const VERSION_PATTERN = /^(latest|[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9._-]+)?)$/
+
+// Identifier safe for use as a CLI arg and filename component
+const NAME_PATTERN = /^[a-zA-Z0-9_-]+$/
+
+// Allow localhost, 127.x, RFC 1918 IPs, and DNS hostnames (for Docker Compose sidecars).
+// Blocks link-local IPs (169.254.x.x) which are used by cloud IMDS endpoints.
+function isSafeAdminUrl(raw: string): boolean {
+  let hostname: string
+  try {
+    hostname = new URL(raw).hostname
+  } catch {
+    return false
+  }
+  const ipv4 = hostname.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/)
+  if (!ipv4) return true // DNS hostname — allow (e.g. "wiremock-runner" in Docker Compose)
+  const [a, b] = [Number(ipv4[1]), Number(ipv4[2])]
+  return (
+    a === 127 ||                         // loopback
+    a === 10 ||                          // RFC 1918
+    (a === 172 && b >= 16 && b <= 31) || // RFC 1918
+    (a === 192 && b === 168)             // RFC 1918
+  )
+}
 
 // Define the base object schema separately so we can access .shape for input key enumeration.
 // superRefine() wraps the schema in ZodEffects which loses the .shape property.
@@ -10,8 +37,10 @@ const InputBaseSchema = z.object({
     mode: z.enum(['serve', 'record-many']).default('serve'),
     ports: z.string().default('8080'),
     'runner-admin-port': z.coerce.number().int().positive().default(9999),
-    'runner-version': z.string().default('latest'),
-    profile: z.string().optional(),
+    'runner-version': z.string().default('latest')
+      .refine(v => VERSION_PATTERN.test(v), 'runner-version must be "latest" or a semver tag like 1.2.3'),
+    profile: z.string().optional()
+      .refine(v => !v || NAME_PATTERN.test(v), 'profile must contain only letters, numbers, hyphens, and underscores'),
     'post-run-pull': z
       .enum(['true', 'false'])
       .transform(v => v === 'true')
@@ -28,12 +57,15 @@ const InputBaseSchema = z.object({
         'resolve-urls',
       ])
       .optional(),
-    'mock-api': z.string().optional(),
+    'mock-api': z.string().optional()
+      .refine(v => !v || NAME_PATTERN.test(v), 'mock-api must contain only letters, numbers, hyphens, and underscores'),
     all: z
       .enum(['true', 'false'])
       .transform(v => v === 'true')
       .default('false'),
-    'runner-admin-url': z.string().url().default('http://localhost:9999'),
+    'runner-admin-url': z.string().url()
+      .refine(isSafeAdminUrl, 'runner-admin-url must target localhost, a private IP, or a Docker Compose service hostname — not a public IP or cloud metadata endpoint')
+      .default('http://localhost:9999'),
     'include-services': z.string().optional(),
     'target-mode': z.enum(['serve', 'record-many']).optional(),
     'runner-config': z.string().optional(),
@@ -41,7 +73,8 @@ const InputBaseSchema = z.object({
       .enum(['true', 'false'])
       .transform(v => v === 'true')
       .default('false'),
-    'wiremock-cli-version': z.string().default('latest'),
+    'wiremock-cli-version': z.string().default('latest')
+      .refine(v => VERSION_PATTERN.test(v), 'wiremock-cli-version must be "latest" or a semver tag like 1.2.3'),
     'health-check-retries': z.coerce.number().int().positive().default(30),
     'health-check-interval': z.coerce.number().positive().default(2),
   })
@@ -126,7 +159,7 @@ export function getInputs(): Inputs {
   const result = InputSchema.safeParse(raw)
   if (!result.success) {
     core.setFailed(`Invalid inputs:\n${JSON.stringify(result.error.format(), null, 2)}`)
-    process.exit(1)
+    throw new ActionFatalError()
   }
   return result.data
 }

@@ -2,6 +2,7 @@ import * as core from '@actions/core'
 import * as exec from '@actions/exec'
 import * as fs from 'fs'
 import * as path from 'path'
+import { ActionFatalError } from '../errors'
 import type { Inputs } from '../inputs'
 
 /**
@@ -55,13 +56,16 @@ export async function environmentsCreate(inputs: Inputs, wiremockDir: string): P
 
   if (fs.existsSync(profilePath)) {
     if (inputs.force) {
+      // force: true = "fail hard if already exists" — a safety guard against accidental re-creation.
+      // The WireMock CLI does not support overwriting an existing environment profile.
       core.setFailed(
         `::error title=Profile Already Exists::Environment profile '${profile}' already exists ` +
           `at ${profilePath}. The CLI does not support overwriting an existing environment. ` +
           `Delete the file manually if you intended to recreate it.`
       )
-      process.exit(1)
+      throw new ActionFatalError()
     } else {
+      // force: false (default) = idempotent skip
       core.notice(`Environment profile '${profile}' already exists at ${profilePath}. Skipping (idempotent).`)
       return
     }
@@ -82,7 +86,7 @@ export async function environmentsCreate(inputs: Inputs, wiremockDir: string): P
   }
 }
 
-function handleCliError(stderr: string, operation: string): never {
+function handleCliError(stderr: string, operation: string): void {
   const lower = stderr.toLowerCase()
 
   if (lower.includes('401') || lower.includes('unauthorized') || lower.includes('invalid token')) {
@@ -90,6 +94,7 @@ function handleCliError(stderr: string, operation: string): never {
       `::error title=Authentication Failed::WireMock API token is invalid or expired.\n` +
         `Verify WIREMOCK_API_TOKEN secret at:\nhttps://app.wiremock.cloud/account/security`
     )
+    throw new ActionFatalError()
   } else if (
     lower.includes('econnreset') ||
     lower.includes('etimedout') ||
@@ -97,6 +102,7 @@ function handleCliError(stderr: string, operation: string): never {
     lower.includes('502') ||
     lower.includes('network error')
   ) {
+    // Transient network error — warn but don't fail the step (push/pull are idempotent)
     core.warning(
       `${operation} failed due to a network error: ${stderr}\n` +
         `This may be a transient network error. Re-running the job is safe — ` +
@@ -111,8 +117,9 @@ function handleCliError(stderr: string, operation: string): never {
       `::error title=Profile Not Found::Profile file referenced by '${operation}' was not found.\n` +
         `Run the environments-create command first.`
     )
+    throw new ActionFatalError()
   } else {
     core.setFailed(`${operation} failed:\n${stderr}`)
+    throw new ActionFatalError()
   }
-  process.exit(1)
 }

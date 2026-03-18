@@ -9,18 +9,19 @@ export async function retry<T>(
   options: RetryOptions
 ): Promise<T> {
   const { retries, intervalSeconds, onAttempt } = options
+  const maxAttempts = Math.max(retries, 1)
 
-  for (let attempt = 1; attempt <= retries; attempt++) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       return await fn()
     } catch (err) {
-      if (attempt === retries) throw err
-      onAttempt?.(attempt, retries)
+      if (attempt === maxAttempts) throw err
+      onAttempt?.(attempt, maxAttempts)
       await sleep(intervalSeconds * 1000)
     }
   }
 
-  // unreachable but satisfies TypeScript
+  // unreachable
   throw new Error('Retry exhausted')
 }
 
