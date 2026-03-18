@@ -28,7 +28,6 @@ export async function startContainer(inputs: Inputs, wiremockDir: string): Promi
     'run',
     '--detach',
     '--name', containerName,
-    '--rm',
     '-v', `${wiremockDir}:/work/.wiremock`,
   ]
 
@@ -81,9 +80,10 @@ export async function waitForHealth(
       let output = ''
       const exitCode = await exec.exec(
         'curl',
-        ['-sf', '--max-time', '3', '--output', '/dev/null', '--write-out', '%{http_code}', healthUrl],
+        ['-s', '--max-time', '3', '--output', '/dev/null', '--write-out', '%{http_code}', healthUrl],
         {
           silent: true,
+          ignoreReturnCode: true,
           listeners: {
             stdout: (data: Buffer) => { output += data.toString() },
           },
@@ -115,4 +115,6 @@ export async function stopContainer(containerName: string): Promise<void> {
   } catch {
     core.warning(`Could not stop container ${containerName} — it may have already exited.`)
   }
+  // Always remove the container so it doesn't accumulate on the runner
+  await exec.exec('docker', ['rm', '-f', containerName], { ignoreReturnCode: true })
 }

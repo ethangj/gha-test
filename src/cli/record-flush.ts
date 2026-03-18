@@ -17,9 +17,10 @@ export async function verifyRunnerReachable(adminUrl: string): Promise<void> {
   let httpCode = ''
   const exitCode = await exec.exec(
     'curl',
-    ['-sf', '--max-time', '5', '--output', '/dev/null', '--write-out', '%{http_code}', healthUrl],
+    ['-s', '--max-time', '5', '--output', '/dev/null', '--write-out', '%{http_code}', healthUrl],
     {
       silent: true,
+      ignoreReturnCode: true,
       listeners: {
         stdout: (data: Buffer) => { httpCode += data.toString() },
       },
@@ -57,7 +58,7 @@ export async function recordFlush(inputs: Inputs): Promise<boolean> {
   const exitCode = await exec.exec(
     'curl',
     [
-      '-sf',
+      '-s',
       '-X', 'POST',
       '-H', 'Content-Type: application/json',
       '-d', body,
@@ -67,6 +68,7 @@ export async function recordFlush(inputs: Inputs): Promise<boolean> {
     ],
     {
       silent: true,
+      ignoreReturnCode: true,
       listeners: {
         stdout: (data: Buffer) => { responseBody += data.toString() },
       },
@@ -100,19 +102,26 @@ export async function modeSwitch(inputs: Inputs): Promise<void> {
   const targetMode = inputs['target-mode']!
 
   // Parse runner-config YAML string if provided
-  let extraConfig: Record<string, unknown> = {}
+  // Config values must be strings per the Runner API spec
+  let extraConfig: Record<string, string> = {}
   if (inputs['runner-config']) {
     try {
       const parsed = yaml.load(inputs['runner-config'])
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        extraConfig = parsed as Record<string, unknown>
+        for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+          extraConfig[k] = String(v)
+        }
       }
     } catch (err) {
       core.warning(`Failed to parse runner-config YAML: ${err}. Ignoring extra config.`)
     }
   }
 
-  const body = JSON.stringify({ mode: targetMode, config: extraConfig })
+  const bodyObj: Record<string, unknown> = { mode: targetMode }
+  if (Object.keys(extraConfig).length > 0) {
+    bodyObj.config = extraConfig
+  }
+  const body = JSON.stringify(bodyObj)
 
   let responseBody = ''
   let httpCode = ''
@@ -120,7 +129,7 @@ export async function modeSwitch(inputs: Inputs): Promise<void> {
   const exitCode = await exec.exec(
     'curl',
     [
-      '-sf',
+      '-s',
       '-X', 'PUT',
       '-H', 'Content-Type: application/json',
       '-d', body,
@@ -130,6 +139,7 @@ export async function modeSwitch(inputs: Inputs): Promise<void> {
     ],
     {
       silent: true,
+      ignoreReturnCode: true,
       listeners: {
         stdout: (data: Buffer) => { responseBody += data.toString() },
       },

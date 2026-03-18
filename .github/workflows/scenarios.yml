@@ -1,24 +1,55 @@
-name: Scenarios
+name: CI
 
-# Exercises every scenario the action supports.
-# All jobs that start a WireMock Runner or call Cloud APIs require
-# WIREMOCK_API_TOKEN and run under environment: integration.
+# Lint, typecheck, unit tests + all scenario integration tests in one workflow.
 
 on:
   push:
+    branches: [main]
+  pull_request:
     branches: [main]
   workflow_dispatch:
 
 permissions: {}
 
 # ─────────────────────────────────────────────────────────────────────────────
-# UC-4: Ephemeral serve — push pre-committed stubs to Cloud, then serve them
+# Lint, typecheck, unit tests, dist freshness
 # ─────────────────────────────────────────────────────────────────────────────
 jobs:
+  lint-test:
+    name: 'Lint & Tests'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4
+
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      - run: npm test
+
+      - name: Verify dist is up to date
+        run: |
+          npm run build
+          git diff --quiet dist/ || {
+            echo "::error::dist/ is out of date. Run 'npm run build' and commit the result."
+            exit 1
+          }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# UC-4: Ephemeral serve — push pre-committed stubs to Cloud, then serve them
+# ─────────────────────────────────────────────────────────────────────────────
   uc4-ephemeral-serve:
     name: 'UC-4: Ephemeral serve'
     runs-on: ubuntu-latest
     environment: integration
+    needs: lint-test
     permissions:
       contents: read
     steps:
@@ -85,6 +116,7 @@ jobs:
     name: 'UC-7: Resolve URLs (sidecar)'
     runs-on: ubuntu-latest
     environment: integration
+    needs: lint-test
     permissions:
       contents: read
     outputs:
@@ -133,7 +165,7 @@ jobs:
 # ─────────────────────────────────────────────────────────────────────────────
   uc10-cross-job-urls:
     name: 'UC-10: Cross-job URL sharing'
-    needs: uc7-resolve-urls
+    needs: [lint-test, uc7-resolve-urls]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -159,6 +191,7 @@ jobs:
     name: 'UC-3: environments-create'
     runs-on: ubuntu-latest
     environment: integration
+    needs: lint-test
     permissions:
       contents: read
     steps:
@@ -199,7 +232,7 @@ jobs:
 # ─────────────────────────────────────────────────────────────────────────────
   uc1-push:
     name: 'UC-1: push to Cloud'
-    needs: uc3-environments-create
+    needs: [lint-test, uc3-environments-create]
     runs-on: ubuntu-latest
     environment: integration
     permissions:
@@ -242,7 +275,7 @@ jobs:
 # ─────────────────────────────────────────────────────────────────────────────
   uc2-pull:
     name: 'UC-2: pull from Cloud'
-    needs: uc1-push
+    needs: [lint-test, uc1-push]
     runs-on: ubuntu-latest
     environment: integration
     permissions:
@@ -278,7 +311,7 @@ jobs:
 # ─────────────────────────────────────────────────────────────────────────────
   uc5-ephemeral-record:
     name: 'UC-5: Ephemeral record-many'
-    needs: uc3-environments-create
+    needs: [lint-test, uc3-environments-create]
     runs-on: ubuntu-latest
     environment: integration
     permissions:
@@ -326,7 +359,7 @@ jobs:
 # ─────────────────────────────────────────────────────────────────────────────
   uc6-sidecar-record:
     name: 'UC-6: Sidecar record-many (mode-switch + flush)'
-    needs: uc3-environments-create
+    needs: [lint-test, uc3-environments-create]
     runs-on: ubuntu-latest
     environment: integration
     permissions:
@@ -409,7 +442,7 @@ jobs:
 # ─────────────────────────────────────────────────────────────────────────────
   uc8-promote:
     name: 'UC-8: Promote development → staging'
-    needs: [uc5-ephemeral-record, uc1-push]
+    needs: [lint-test, uc5-ephemeral-record, uc1-push]
     runs-on: ubuntu-latest
     environment: integration
     permissions:
@@ -455,6 +488,7 @@ jobs:
     name: 'UC-9: mode-switch with runner-config'
     runs-on: ubuntu-latest
     environment: integration
+    needs: lint-test
     permissions:
       contents: read
     steps:
@@ -468,14 +502,13 @@ jobs:
             -e WMC_API_TOKEN=${{ secrets.WIREMOCK_API_TOKEN }} \
             -e WMC_DEFAULT_MODE=serve \
             -e WMC_ADMIN_PORT=9999 \
-            -e WMC_RUN_PROFILE=development \
             wiremock/wiremock-runner:latest
           for i in $(seq 1 30); do
             curl -sf http://localhost:9999/__/health && echo "Runner healthy" && break
             [ "$i" = "30" ] && docker logs wiremock-runner && exit 1
             sleep 2
           done
-          sleep 3
+          sleep 5
 
       - name: Switch to record-many with batch config
         uses: ./

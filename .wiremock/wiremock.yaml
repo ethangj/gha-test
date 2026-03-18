@@ -2,6 +2,7 @@ services:
   todos-api:
     type: REST
     cloud_id: k5qm0
+    path: todos-api
     name: GHA Test
     port: 8080
     originals:
