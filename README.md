@@ -1,7 +1,5 @@
 # WireMock Runner GitHub Action
 
-[![CI](https://img.shields.io/github/actions/workflow/status/wiremock/wiremock-runner-action/scenarios.yml?branch=main&label=CI)](https://github.com/wiremock/wiremock-runner-action/actions/workflows/scenarios.yml)
-[![GitHub Marketplace](https://img.shields.io/badge/Marketplace-WireMock%20Runner-blue?logo=github)](https://github.com/marketplace/actions/wiremock-runner)
 
 Push and pull mock APIs, run ephemeral mock servers, record real API traffic, and promote stubs across environments — all from your GitHub Actions workflow.
 
