@@ -1,6 +1,6 @@
 # WireMock Runner GitHub Action
 
-[![CI](https://img.shields.io/github/actions/workflow/status/wiremock/wiremock-runner-action/ci.yml?branch=main&label=CI)](https://github.com/wiremock/wiremock-runner-action/actions)
+[![CI](https://img.shields.io/github/actions/workflow/status/wiremock/wiremock-runner-action/scenarios.yml?branch=main&label=CI)](https://github.com/wiremock/wiremock-runner-action/actions/workflows/scenarios.yml)
 [![GitHub Marketplace](https://img.shields.io/badge/Marketplace-WireMock%20Runner-blue?logo=github)](https://github.com/marketplace/actions/wiremock-runner)
 
 Push and pull mock APIs, run ephemeral mock servers, record real API traffic, and promote stubs across environments — all from your GitHub Actions workflow.
@@ -12,6 +12,7 @@ Built on [WireMock Cloud](https://app.wiremock.cloud) and the [WireMock Runner](
 ## Table of contents
 
 - [Prerequisites](#prerequisites)
+- [First-time setup](#first-time-setup)
 - [Quick start](#quick-start)
 - [Repository structure](#repository-structure)
 - [Use cases](#use-cases)
@@ -44,6 +45,68 @@ GitHub repo → Settings → Secrets and variables → Actions → New repositor
 Name: WIREMOCK_API_TOKEN
 Value: <your token>
 ```
+
+---
+
+## First-time setup
+
+If you don't have a WireMock Cloud account or a `wiremock.yaml` yet, follow these steps before using the action.
+
+### 1. Create a WireMock Cloud account
+
+Sign up at [app.wiremock.cloud](https://app.wiremock.cloud). The free tier is sufficient for most CI use cases.
+
+### 2. Create a mock API
+
+In the WireMock Cloud UI, click **New mock API**, give it a name (e.g. `orders-api`), and note the **mock API ID** (`cloud_id`) from the project URL:
+
+```
+https://app.wiremock.cloud/mock-apis/<cloud_id>/stubs
+```
+
+### 3. Get your API token
+
+Go to **Account → Security** and copy your API token.
+
+### 4. Add the secret to your repository
+
+```
+GitHub repo → Settings → Secrets and variables → Actions → New repository secret
+Name:  WIREMOCK_API_TOKEN
+Value: <your token>
+```
+
+### 5. Create `.wiremock/wiremock.yaml`
+
+Add a `wiremock.yaml` to the root of your repository under a `.wiremock/` directory:
+
+```yaml
+services:
+  orders-api:
+    type: REST
+    cloud_id: <your-mock-api-id>   # from step 2
+    name: Orders API
+    port: 8080
+    originals:
+      default: https://api.example.com   # real upstream URL
+```
+
+Commit this file. The action reads it to know which mock APIs to serve or sync.
+
+### 6. (Optional) Bootstrap environment profiles
+
+If you plan to use `push` / `pull` with a `profile:` input, you need a profile file committed to your repository. Create it once:
+
+```yaml
+- name: Create development profile
+  uses: wiremock/wiremock-runner-action@v1
+  with:
+    api-token: ${{ secrets.WIREMOCK_API_TOKEN }}
+    command: environments-create
+    profile: development
+```
+
+Commit the generated `wiremock-development.yaml`. After that, the step is idempotent — it will skip if the file already exists.
 
 ---
 
@@ -330,6 +393,11 @@ When the Runner is a `services:` sidecar, use `resolve-urls` to get the live URL
 Pull from development, push to staging — a clean promotion gate:
 
 ```yaml
+on:
+  push:
+    branches:
+      - main
+
 jobs:
   promote:
     runs-on: ubuntu-latest
@@ -353,7 +421,7 @@ jobs:
           profile: staging
 ```
 
-Trigger this on a manual `workflow_dispatch` event or after integration tests pass.
+This auto-deploys stub changes to staging on every merge to `main`. You can also trigger it manually with `workflow_dispatch` or gate it behind integration tests passing.
 
 ---
 
