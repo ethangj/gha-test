@@ -115,11 +115,11 @@ describe('pushPull', () => {
 // ─── environmentsCreate ──────────────────────────────────────────────────────
 
 describe('environmentsCreate', () => {
-  it('runs wiremock environments create with correct profile', async () => {
+  it('runs wiremock environments create with correct profile and wiremock-dir', async () => {
     await environmentsCreate(makeInputs({ profile: 'development' }), tmpDir)
     expect(mockExec).toHaveBeenCalledWith(
       'wiremock',
-      ['environments', 'create', '--profile', 'development'],
+      ['environments', 'create', '--profile', 'development', '--wiremock-dir', tmpDir],
       expect.any(Object)
     )
   })

@@ -71,7 +71,7 @@ export async function environmentsCreate(inputs: Inputs, wiremockDir: string): P
     }
   }
 
-  const args = ['environments', 'create', '--profile', profile]
+  const args = ['environments', 'create', '--profile', profile, '--wiremock-dir', wiremockDir]
 
   let stderr = ''
   const exitCode = await exec.exec('wiremock', args, {
