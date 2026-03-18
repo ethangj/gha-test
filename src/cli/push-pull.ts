@@ -29,6 +29,7 @@ export async function pushPull(
 
   let stderr = ''
   const exitCode = await exec.exec('wiremock', args, {
+    ignoreReturnCode: true,
     listeners: {
       stderr: (data: Buffer) => { stderr += data.toString() },
     },
@@ -70,6 +71,7 @@ export async function environmentsCreate(inputs: Inputs, wiremockDir: string): P
 
   let stderr = ''
   const exitCode = await exec.exec('wiremock', args, {
+    ignoreReturnCode: true,
     listeners: {
       stderr: (data: Buffer) => { stderr += data.toString() },
     },
