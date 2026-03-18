@@ -1,34 +1,48 @@
 ---
 mappings:
-  - id: a1b2c3d4-0001-0000-0000-000000000001
-    name: Get todo by ID
-    request:
-      method: GET
-      urlPathPattern: /todos/[0-9]+
-    response:
-      status: 200
-      headers:
-        Content-Type: application/json
-      jsonBody:
-        userId: 1
-        id: 1
-        title: "stub: buy groceries"
-        completed: false
-  - id: a1b2c3d4-0002-0000-0000-000000000002
-    name: Get todos list
-    request:
-      method: GET
-      url: /todos
-    response:
-      status: 200
-      headers:
-        Content-Type: application/json
-      jsonBody:
-        - userId: 1
-          id: 1
-          title: "stub: buy groceries"
-          completed: false
-        - userId: 1
-          id: 2
-          title: "stub: walk the dog"
-          completed: true
+- id: "a1b2c3d4-0002-0000-0000-000000000002"
+  name: "Get todos list"
+  request:
+    url: "/todos"
+    method: "GET"
+  response:
+    status: 200
+    jsonBody:
+    - userId: 1
+      id: 1
+      title: "stub: buy groceries"
+      completed: false
+    - userId: 1
+      id: 2
+      title: "stub: walk the dog"
+      completed: true
+    headers:
+      Content-Type: "application/json"
+  persistent: true
+  metadata:
+    mocklab:
+      created:
+        at: "2026-03-18T00:52:55.227799616Z"
+        via: "ADMIN_API"
+        by: "ove9z"
+- id: "a1b2c3d4-0001-0000-0000-000000000001"
+  name: "Get todo by ID"
+  request:
+    urlPathPattern: "/todos/[0-9]+"
+    method: "GET"
+  response:
+    status: 200
+    jsonBody:
+      userId: 1
+      id: 1
+      title: "stub: buy groceries"
+      completed: false
+    headers:
+      Content-Type: "application/json"
+  persistent: true
+  metadata:
+    mocklab:
+      created:
+        at: "2026-03-18T00:52:55.221580525Z"
+        via: "ADMIN_API"
+        by: "ove9z"

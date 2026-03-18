@@ -151,10 +151,21 @@ export async function modeSwitch(inputs: Inputs): Promise<void> {
 
   if (exitCode !== 0 || !httpCode.startsWith('2')) {
     if (httpCode === '409') {
-      core.warning(
-        `Runner is already in ${targetMode} mode. Proceeding (the Runner handles this gracefully).`
-      )
-      return
+      const responseText = parts.slice(0, -1).join('\n')
+      let isAlreadyInMode = false
+      try {
+        const parsed = JSON.parse(responseText)
+        if (parsed?.errors?.[0]?.detail?.includes('Runner is already in')) {
+          isAlreadyInMode = true
+        }
+      } catch { /* non-JSON body, treat as error */ }
+
+      if (isAlreadyInMode) {
+        core.warning(
+          `Runner is already in ${targetMode} mode. Proceeding (the Runner handles this gracefully).`
+        )
+        return
+      }
     }
     core.setFailed(
       `::error title=Mode Switch Failed::Could not switch Runner to ${targetMode} mode. ` +

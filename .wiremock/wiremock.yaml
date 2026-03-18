@@ -6,4 +6,4 @@ services:
     name: GHA Test
     port: 8080
     originals:
-      base-url: https://jsonplaceholder.typicode.com
+      default: https://jsonplaceholder.typicode.com
