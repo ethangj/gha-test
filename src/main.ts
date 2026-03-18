@@ -180,12 +180,36 @@ async function runEphemeralMode(
     }
   }
 
-  // Post-run pull (if requested and recording mode)
+  // Post-run pull (if requested and recording mode).
+  // Run exec directly so a failure emits a warning instead of failing the step
+  // (pushPull calls process.exit on error which bypasses the try/catch).
   if (inputs['post-run-pull'] && inputs.mode === 'record-many' && inputs['api-token']) {
     try {
       await installCli(inputs['wiremock-cli-version'])
       await configureToken(inputs['api-token'])
-      await pushPull('pull', inputs, wiremockDir)
+
+      const pullArgs = ['pull', 'mock-api', '--wiremock-dir', wiremockDir, '--all']
+      if (inputs.profile) pullArgs.push('--profile', inputs.profile)
+
+      let pullOutput = ''
+      const pullExit = await exec.exec('wiremock', pullArgs, {
+        ignoreReturnCode: true,
+        listeners: {
+          stdout: (data: Buffer) => { pullOutput += data.toString() },
+          stderr: (data: Buffer) => { pullOutput += data.toString() },
+        },
+      })
+
+      if (pullExit !== 0) {
+        core.warning(
+          `Post-run pull failed (exit ${pullExit}). ` +
+            `Recordings were flushed to Cloud but stubs were not pulled locally.\n` +
+            `Run 'command: pull' in a separate step to retry.\n` +
+            `Output: ${pullOutput || '(none)'}`
+        )
+      } else {
+        core.info('Post-run pull succeeded')
+      }
     } catch (err) {
       core.warning(`Post-run pull failed: ${err}`)
     }
