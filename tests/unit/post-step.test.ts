@@ -20,20 +20,31 @@ describe('stopContainer', () => {
     jest.clearAllMocks()
   })
 
-  it('calls docker stop with the container name and --time 5', async () => {
+  it('calls docker stop then docker rm with the container name', async () => {
     mockExec.mockResolvedValue(0)
     await stopContainer('wiremock-runner-123-job-abc123')
     expect(mockExec).toHaveBeenCalledWith(
       'docker',
       ['stop', '--time', '5', 'wiremock-runner-123-job-abc123']
     )
+    expect(mockExec).toHaveBeenCalledWith(
+      'docker',
+      ['rm', '-f', 'wiremock-runner-123-job-abc123'],
+      { ignoreReturnCode: true }
+    )
   })
 
-  it('emits a warning (not an error) when docker stop fails', async () => {
-    mockExec.mockRejectedValue(new Error('container not found'))
+  it('emits a warning (not an error) when docker stop fails, still calls docker rm', async () => {
+    mockExec.mockRejectedValueOnce(new Error('container not found'))
+    mockExec.mockResolvedValue(0)
     await expect(stopContainer('wiremock-runner-123-job-abc123')).resolves.toBeUndefined()
     expect(mockWarning).toHaveBeenCalledWith(
       expect.stringContaining('Could not stop container')
+    )
+    expect(mockExec).toHaveBeenCalledWith(
+      'docker',
+      ['rm', '-f', 'wiremock-runner-123-job-abc123'],
+      { ignoreReturnCode: true }
     )
   })
 })
