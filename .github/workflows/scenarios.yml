@@ -126,19 +126,9 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4
 
       - name: Start WireMock Runner
-        run: |
-          docker run -d --name wiremock-runner \
-            -p 8080:8080 -p 9999:9999 \
-            -v "${{ github.workspace }}/.wiremock:/work/.wiremock" \
-            -e WMC_API_TOKEN=${{ secrets.WIREMOCK_API_TOKEN }} \
-            -e WMC_DEFAULT_MODE=serve \
-            -e WMC_ADMIN_PORT=9999 \
-            wiremock/wiremock-runner:latest
-          for i in $(seq 1 30); do
-            curl -sf http://localhost:9999/__/health && echo "Runner healthy" && break
-            [ "$i" = "30" ] && docker logs wiremock-runner && exit 1
-            sleep 2
-          done
+        run: bash scripts/start-wiremock-runner.sh
+        env:
+          WMC_API_TOKEN: ${{ secrets.WIREMOCK_API_TOKEN }}
 
       - name: Resolve mock service URLs
         id: resolve
@@ -375,20 +365,10 @@ jobs:
           profile: development
 
       - name: Start WireMock Runner (serve mode)
-        run: |
-          docker run -d --name wiremock-runner \
-            -p 8080:8080 -p 9999:9999 \
-            -v "${{ github.workspace }}/.wiremock:/work/.wiremock" \
-            -e WMC_API_TOKEN=${{ secrets.WIREMOCK_API_TOKEN }} \
-            -e WMC_DEFAULT_MODE=serve \
-            -e WMC_ADMIN_PORT=9999 \
-            -e WMC_RUN_PROFILE=development \
-            wiremock/wiremock-runner:latest
-          for i in $(seq 1 30); do
-            curl -sf http://localhost:9999/__/health && echo "Runner healthy" && break
-            [ "$i" = "30" ] && docker logs wiremock-runner && exit 1
-            sleep 2
-          done
+        run: bash scripts/start-wiremock-runner.sh
+        env:
+          WMC_API_TOKEN: ${{ secrets.WIREMOCK_API_TOKEN }}
+          WMC_RUN_PROFILE: development
 
       - name: Resolve mock URLs (verifies Runner is healthy)
         id: mocks
@@ -495,20 +475,12 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4
 
       - name: Start WireMock Runner
-        run: |
-          docker run -d --name wiremock-runner \
-            -p 8080:8080 -p 9999:9999 \
-            -v "${{ github.workspace }}/.wiremock:/work/.wiremock" \
-            -e WMC_API_TOKEN=${{ secrets.WIREMOCK_API_TOKEN }} \
-            -e WMC_DEFAULT_MODE=serve \
-            -e WMC_ADMIN_PORT=9999 \
-            wiremock/wiremock-runner:latest
-          for i in $(seq 1 30); do
-            curl -sf http://localhost:9999/__/health && echo "Runner healthy" && break
-            [ "$i" = "30" ] && docker logs wiremock-runner && exit 1
-            sleep 2
-          done
-          sleep 5
+        run: bash scripts/start-wiremock-runner.sh
+        env:
+          WMC_API_TOKEN: ${{ secrets.WIREMOCK_API_TOKEN }}
+
+      - name: Allow extra settle time before mode-switch
+        run: sleep 5
 
       - name: Switch to record-many with batch config
         uses: ./
