@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p3
 issue_id: "018"
 tags: [code-review, security, documentation]
@@ -62,12 +62,20 @@ Option 1 — documentation warning is the right control here. Option 2 creates a
 
 ## Acceptance Criteria
 
-- [ ] README has explicit warning about shell injection risk for `run:` input
-- [ ] README explains that subprocess receives all workflow secrets
-- [ ] action.yml `run` input description mentions security constraints
+- [x] README has explicit warning about shell injection risk for `run:` input
+- [x] README explains that subprocess receives all workflow secrets
+- [x] action.yml `run` input description mentions security constraints
 
 ## Work Log
 
 ### 2026-03-18 - Discovery
 
 **By:** Security review agent
+
+### 2026-07-16 - Verified complete
+
+**By:** Claude Code review
+
+**Actions:**
+- README's Security section (lines 585–591) already had the shell-injection warning, landed in commit `a9c88e6`; frontmatter was never updated at the time
+- `action.yml`'s `run` input description did NOT yet mention the security constraint — added a one-line SECURITY note pointing to the README's Security section

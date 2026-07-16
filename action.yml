@@ -30,7 +30,10 @@ inputs:
       Shell command to execute while the Runner container is live.
       When set, the Action starts a wiremock/wiremock-runner container,
       waits for it to be healthy, executes this command, then stops the
-      container.
+      container. SECURITY: this command runs via `bash -c` and inherits the
+      full runner environment, including all workflow secrets. Never set
+      this from untrusted GitHub event data (PR titles, issue bodies,
+      workflow_dispatch inputs) — see the README's Security section.
     required: false
 
   mode:

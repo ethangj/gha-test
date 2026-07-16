@@ -2,6 +2,7 @@
   "name": "wiremock-runner-action",
   "version": "1.0.0",
   "description": "Push/pull mock API specs, run mock servers, and record API traffic using WireMock Cloud and WireMock Runner.",
+  "license": "Apache-2.0",
   "engines": {
     "node": ">=24"
   },
@@ -9,13 +10,12 @@
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "test": "jest",
-    "lint": "eslint src tests --ext .ts"
+    "lint": "eslint src --ext .ts"
   },
   "dependencies": {
     "@actions/core": "^1.11.1",
     "@actions/exec": "^1.1.1",
     "@actions/http-client": "^2.2.3",
-    "@actions/tool-cache": "^2.0.2",
     "js-yaml": "^4.1.0",
     "zod": "^3.23.8"
   },

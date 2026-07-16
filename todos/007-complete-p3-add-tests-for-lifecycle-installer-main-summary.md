@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p3
 issue_id: "007"
 tags: [code-review, testing]
@@ -58,13 +58,25 @@ Start with `lifecycle.ts` (testable with exec mocks) and `installer.ts`. `main.t
 
 ## Acceptance Criteria
 
-- [ ] `lifecycle.ts` has tests for startContainer, waitForHealth (success + timeout), stopContainer
-- [ ] `installer.ts` has tests for installCli, configureToken
-- [ ] `summary.ts` has tests for writeSummary (with and without URLs)
-- [ ] All new tests pass
+- [x] `lifecycle.ts` has tests for startContainer, waitForHealth (success + timeout), stopContainer
+- [x] `installer.ts` has tests for installCli, configureToken
+- [x] `summary.ts` has tests for writeSummary (with and without URLs)
+- [x] All new tests pass
 
 ## Work Log
 
 ### 2026-03-18 - Discovery
 
 **By:** Claude Code review
+
+### 2026-07-16 - Verified complete
+
+**By:** Claude Code review
+
+**Actions:**
+- Confirmed `lifecycle.ts`, `installer.ts`, `summary.ts` all at 100% test coverage — landed in commit
+  `a9c88e6`; frontmatter was never updated at the time
+- Note: this todo's acceptance criteria never actually listed `main.ts` despite the title and Findings
+  section mentioning it — `main.ts` remained at 0% coverage until a separate follow-up effort added
+  `src/__tests__/main.test.ts` (96%+ coverage of the orchestration/dispatch logic), tracked apart from
+  this todo's original scope

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "002"
 tags: [code-review, testing, dead-code]
@@ -66,9 +66,9 @@ Check `tests/unit/post-step.test.ts` for anything not covered in `src/__tests__/
 
 ## Acceptance Criteria
 
-- [ ] `tests/unit/` directory removed
-- [ ] Any unique test cases from `post-step.test.ts` migrated to `src/__tests__/`
-- [ ] `npm test` passes with no regressions
+- [x] `tests/unit/` directory removed
+- [x] Any unique test cases from `post-step.test.ts` migrated to `src/__tests__/`
+- [x] `npm test` passes with no regressions
 
 ## Work Log
 
@@ -79,3 +79,11 @@ Check `tests/unit/post-step.test.ts` for anything not covered in `src/__tests__/
 **Actions:**
 - Confirmed jest.config.ts testMatch excludes `tests/unit/`
 - Identified 4 orphaned test files
+
+### 2026-07-16 - Verified complete
+
+**By:** Claude Code review
+
+**Actions:**
+- Confirmed `tests/unit/` no longer exists on disk and is untracked by git
+- Landed in commit `a9c88e6` alongside todos 007, 016, 018; frontmatter was never updated at the time

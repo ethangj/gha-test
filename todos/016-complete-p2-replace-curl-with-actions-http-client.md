@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "016"
 tags: [code-review, architecture, refactor]
@@ -66,13 +66,22 @@ Option 1. Prioritize after todo 014 (process.exit) is done as the functions will
 
 ## Acceptance Criteria
 
-- [ ] No `curl` exec calls remain in `record-flush.ts` or `lifecycle.ts`
-- [ ] Status code handling uses typed numbers, not string parsing
-- [ ] All tests updated and passing
-- [ ] `curl` not required on runner for these operations
+- [x] No `curl` exec calls remain in `record-flush.ts` or `lifecycle.ts`
+- [x] Status code handling uses typed numbers, not string parsing
+- [x] All tests updated and passing
+- [x] `curl` not required on runner for these operations
 
 ## Work Log
 
 ### 2026-03-18 - Discovery
 
 **By:** Architecture review agent
+
+### 2026-07-16 - Verified complete
+
+**By:** Claude Code review
+
+**Actions:**
+- Confirmed zero `curl` references remain anywhere under `src/`
+- `record-flush.ts` and `lifecycle.ts` both use `@actions/http-client` with typed `statusCode` checks
+- Landed in commit `a9c88e6` alongside todos 002, 007, 018; frontmatter was never updated at the time
