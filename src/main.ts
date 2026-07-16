@@ -20,7 +20,7 @@ import {
 
 // ─── Post step ───────────────────────────────────────────────────────────────
 
-async function runPostStep(): Promise<void> {
+export async function runPostStep(): Promise<void> {
   const containerName = core.getState('containerName')
   if (!containerName) return // ephemeral mode never started
   await stopContainer(containerName)
@@ -28,7 +28,7 @@ async function runPostStep(): Promise<void> {
 
 // ─── Main step ───────────────────────────────────────────────────────────────
 
-async function runMainStep(): Promise<void> {
+export async function runMainStep(): Promise<void> {
   core.saveState('isPost', 'true')
 
   // Mask the API token before validation to prevent leaks in Zod error output
@@ -62,7 +62,7 @@ async function runMainStep(): Promise<void> {
   }
 }
 
-async function runEphemeralMode(
+export async function runEphemeralMode(
   inputs: ReturnType<typeof getInputs>,
   wiremockDir: string
 ): Promise<void> {
@@ -230,7 +230,7 @@ async function runEphemeralMode(
   }
 }
 
-async function runCommandMode(
+export async function runCommandMode(
   inputs: ReturnType<typeof getInputs>,
   wiremockDir: string
 ): Promise<void> {
@@ -307,7 +307,7 @@ async function runCommandMode(
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
 
-async function run(): Promise<void> {
+export async function run(): Promise<void> {
   if (core.getState('isPost') === 'true') {
     await runPostStep()
   } else {
@@ -315,10 +315,15 @@ async function run(): Promise<void> {
   }
 }
 
-run().catch(err => {
-  // ActionFatalError means core.setFailed was already called; don't overwrite the annotation.
-  if (!(err instanceof ActionFatalError)) {
-    core.setFailed(err instanceof Error ? err.message : String(err))
-  }
-  process.exit(1)
-})
+// Only auto-run when this file is the process entry point (the compiled dist/index.js
+// that GitHub Actions executes) — not when it's imported by unit tests.
+/* istanbul ignore next */
+if (require.main === module) {
+  run().catch(err => {
+    // ActionFatalError means core.setFailed was already called; don't overwrite the annotation.
+    if (!(err instanceof ActionFatalError)) {
+      core.setFailed(err instanceof Error ? err.message : String(err))
+    }
+    process.exit(1)
+  })
+}
