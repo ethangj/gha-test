@@ -1,22 +1,47 @@
 import * as core from '@actions/core'
 import * as exec from '@actions/exec'
-import * as tc from '@actions/tool-cache'
 
-const TOOL_NAME = 'wiremock-cli'
+const PACKAGE_NAME = '@wiremock/cli'
+
+/**
+ * Reads the globally installed @wiremock/cli version via `npm list -g --json`,
+ * or undefined if it isn't installed. Global npm installs persist across steps
+ * within the same job, so this lets repeated action invocations in one job skip
+ * a redundant `npm install -g`.
+ */
+async function getInstalledVersion(): Promise<string | undefined> {
+  let stdout = ''
+  try {
+    await exec.exec('npm', ['list', '-g', PACKAGE_NAME, '--depth=0', '--json'], {
+      ignoreReturnCode: true,
+      silent: true,
+      listeners: { stdout: (data: Buffer) => { stdout += data.toString() } },
+    })
+  } catch {
+    return undefined
+  }
+
+  try {
+    const parsed = JSON.parse(stdout)
+    return parsed?.dependencies?.[PACKAGE_NAME]?.version
+  } catch {
+    return undefined
+  }
+}
 
 /**
  * Installs @wiremock/cli globally via npm.
- * Uses tool-cache to avoid redundant installs on self-hosted runners.
+ * Skips the install if the requested version (or any version, for "latest")
+ * is already installed on this runner.
  */
 export async function installCli(version: string): Promise<void> {
-  // Check tool cache first (useful on self-hosted runners)
-  const cached = tc.find(TOOL_NAME, version)
-  if (cached) {
-    core.info(`Using cached @wiremock/cli@${version}`)
+  const installed = await getInstalledVersion()
+  if (installed && (version === 'latest' || installed === version)) {
+    core.info(`@wiremock/cli@${installed} already installed, skipping install`)
     return
   }
 
-  const pkg = version === 'latest' ? '@wiremock/cli' : `@wiremock/cli@${version}`
+  const pkg = version === 'latest' ? PACKAGE_NAME : `${PACKAGE_NAME}@${version}`
   core.info(`Installing ${pkg}...`)
 
   await exec.exec('npm', ['install', '-g', pkg])

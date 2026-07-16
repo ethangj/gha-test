@@ -1,20 +1,32 @@
 import * as core from '@actions/core'
 import * as exec from '@actions/exec'
-import * as tc from '@actions/tool-cache'
 import { installCli, configureToken } from '../../cli/installer'
 
 jest.mock('@actions/core')
 jest.mock('@actions/exec')
-jest.mock('@actions/tool-cache')
 
 const mockExec = exec.exec as jest.MockedFunction<typeof exec.exec>
 const mockInfo = core.info as jest.MockedFunction<typeof core.info>
-const mockFind = tc.find as jest.MockedFunction<typeof tc.find>
+
+const NPM_LIST_ARGS = ['list', '-g', '@wiremock/cli', '--depth=0', '--json']
+
+/** Makes the `npm list -g` call resolve as if the given version is (or isn't) installed. */
+function mockNpmList(installedVersion?: string): void {
+  mockExec.mockImplementation(async (command, args, options) => {
+    if (command === 'npm' && args?.[0] === 'list') {
+      const json = installedVersion
+        ? JSON.stringify({ dependencies: { '@wiremock/cli': { version: installedVersion } } })
+        : JSON.stringify({ dependencies: {} })
+      options?.listeners?.stdout?.(Buffer.from(json))
+      return 0
+    }
+    return 0
+  })
+}
 
 beforeEach(() => {
   jest.clearAllMocks()
-  mockExec.mockResolvedValue(0)
-  mockFind.mockReturnValue('')
+  mockNpmList(undefined)
 })
 
 // ─── installCli ───────────────────────────────────────────────────────────────
@@ -30,11 +42,48 @@ describe('installCli', () => {
     expect(mockExec).toHaveBeenCalledWith('npm', ['install', '-g', '@wiremock/cli@1.2.3'])
   })
 
-  it('skips npm install when version is cached', async () => {
-    mockFind.mockReturnValue('/opt/hostedtoolcache/wiremock-cli/1.2.3/x64')
+  it('skips npm install when the requested pinned version is already installed', async () => {
+    mockNpmList('1.2.3')
     await installCli('1.2.3')
-    expect(mockExec).not.toHaveBeenCalled()
-    expect(mockInfo).toHaveBeenCalledWith(expect.stringContaining('cached'))
+    expect(mockExec).toHaveBeenCalledTimes(1)
+    expect(mockExec).toHaveBeenCalledWith('npm', NPM_LIST_ARGS, expect.anything())
+    expect(mockInfo).toHaveBeenCalledWith(expect.stringContaining('already installed'))
+  })
+
+  it('skips npm install when "latest" is requested and any version is already installed', async () => {
+    mockNpmList('9.9.9')
+    await installCli('latest')
+    expect(mockExec).toHaveBeenCalledTimes(1)
+    expect(mockInfo).toHaveBeenCalledWith(expect.stringContaining('already installed'))
+  })
+
+  it('reinstalls when a different pinned version is installed', async () => {
+    mockNpmList('1.0.0')
+    await installCli('2.0.0')
+    expect(mockExec).toHaveBeenCalledWith('npm', ['install', '-g', '@wiremock/cli@2.0.0'])
+  })
+
+  it('installs when `npm list` throws (e.g. no global packages yet)', async () => {
+    mockExec.mockImplementation(async (command, args) => {
+      if (command === 'npm' && args?.[0] === 'list') {
+        throw new Error('npm error: no global packages')
+      }
+      return 0
+    })
+    await installCli('latest')
+    expect(mockExec).toHaveBeenCalledWith('npm', ['install', '-g', '@wiremock/cli'])
+  })
+
+  it('installs when `npm list` returns unparseable output', async () => {
+    mockExec.mockImplementation(async (command, args, options) => {
+      if (command === 'npm' && args?.[0] === 'list') {
+        options?.listeners?.stdout?.(Buffer.from('not json'))
+        return 0
+      }
+      return 0
+    })
+    await installCli('latest')
+    expect(mockExec).toHaveBeenCalledWith('npm', ['install', '-g', '@wiremock/cli'])
   })
 
   it('logs success after install', async () => {
