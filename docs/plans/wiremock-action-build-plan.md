@@ -994,29 +994,24 @@ cancellation. The runner sends SIGINT (7.5s grace), then SIGTERM (2.5s), then
 force-kills. Container cleanup has ~10 seconds — the `docker stop` command is
 issued immediately in the post step with no additional delay.
 
-**Additional mitigation:** Container name includes `github.run_id` and
-`github.job`. A cleanup workflow can be provided:
+**Note on GitHub-hosted runners:** a leftover container doesn't actually
+matter here — each hosted job runs on a single-use VM that's destroyed
+immediately after the job ends (cancelled or not), taking any orphaned
+container with it. A `workflow_run` cleanup job was tried (commit `606c0f8`)
+but is fundamentally unworkable: `workflow_run` fires on a *fresh, unrelated*
+runner VM, which has no visibility into the cancelled job's containers (they
+were on a different VM that's already gone). Don't reintroduce this pattern.
 
-```yaml
-# .github/workflows/cleanup-wiremock.yml
-name: Cleanup WireMock containers
-on:
-  workflow_run:
-    workflows: ['*']           # all workflows in this repo
-    types: [completed]
-
-jobs:
-  cleanup:
-    runs-on: ubuntu-latest
-    # Only run when the triggering workflow was cancelled — not on normal completion
-    if: github.event.workflow_run.conclusion == 'cancelled'
-    permissions: {}
-    steps:
-      - run: |
-          docker ps --filter "name=wiremock-runner-" -q | xargs -r docker stop
-```
-
-Document this pattern in the README.
+**Residual gap (self-hosted runners only):** on a self-hosted runner reused
+across jobs, a container that outlives its ~10-second grace window on
+cancellation can leak and accumulate, since there's no VM teardown to reclaim
+it. Container names include `github.run_id` + `github.job` + a random suffix
+(see §6c), so leaked containers are at least identifiable and won't collide
+with future runs — but nothing currently reaps them. If this becomes a real
+problem for self-hosted users, the fix is a periodic (`schedule:`-triggered)
+job on the same self-hosted runner pool that stops containers older than
+some threshold — not a `workflow_run`-based reaction to a specific cancelled
+run.
 
 ---
 
