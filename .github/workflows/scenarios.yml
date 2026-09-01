@@ -21,9 +21,9 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
-      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -50,10 +50,14 @@ jobs:
     runs-on: ubuntu-latest
     environment: integration
     needs: lint-test
+    # Dependabot PRs never receive environment secrets, so this job would
+    # fail on a missing api-token rather than exercise real behavior. Skip
+    # it cleanly instead; downstream UC jobs skip via the needs: chain.
+    if: github.actor != 'dependabot[bot]'
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Create development environment
         uses: ./
@@ -117,13 +121,15 @@ jobs:
     runs-on: ubuntu-latest
     environment: integration
     needs: lint-test
+    # Dependabot PRs never receive environment secrets — see UC-4 above.
+    if: github.actor != 'dependabot[bot]'
     permissions:
       contents: read
     outputs:
       mock-api-urls: ${{ steps.resolve.outputs.mock-api-urls }}
       mock-api-url: ${{ steps.resolve.outputs.mock-api-url }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Start WireMock Runner
         run: bash scripts/start-wiremock-runner.sh
@@ -182,10 +188,12 @@ jobs:
     runs-on: ubuntu-latest
     environment: integration
     needs: lint-test
+    # Dependabot PRs never receive environment secrets — see UC-4 above.
+    if: github.actor != 'dependabot[bot]'
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Create development environment (idempotent)
         uses: ./
@@ -228,7 +236,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Create environments (required before push with profile)
         uses: ./
@@ -271,7 +279,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Create development environment (so profile yaml exists)
         uses: ./
@@ -307,7 +315,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Create development environment (profile yaml required for record-many)
         uses: ./
@@ -355,7 +363,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Create development environment (profile yaml required for recording)
         uses: ./
@@ -428,7 +436,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Create environments (profile yamls required for push/pull)
         uses: ./
@@ -469,10 +477,12 @@ jobs:
     runs-on: ubuntu-latest
     environment: integration
     needs: lint-test
+    # Dependabot PRs never receive environment secrets — see UC-4 above.
+    if: github.actor != 'dependabot[bot]'
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Start WireMock Runner
         run: bash scripts/start-wiremock-runner.sh

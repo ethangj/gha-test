@@ -7,7 +7,7 @@ npm ci
 npm test
 ```
 
-All 114 unit tests run locally with no external dependencies.
+All 161 unit tests run locally with no external dependencies.
 
 ## Running integration tests
 
